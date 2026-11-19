@@ -1,0 +1,43 @@
+# Burp2Magisk สำหรับ macOS
+
+แอป Swift/AppKit สำหรับเลือกหรือลาก Burp CA certificate (.der/.pem) และบันทึก Magisk module ZIP โดยใช้ Magisk template ของ Burp2Magisk
+
+## ใช้งาน
+
+1. แตก `dist/Burp2Magisk-macOS.zip` แล้วเปิด `Burp2Magisk.app`
+2. ลาก certificate ลงในหน้าต่าง หรือกด **เลือกไฟล์…**
+3. กด **สร้าง Magisk ZIP…** แล้วเลือกที่บันทึก
+4. นำ ZIP ผลลัพธ์ไปติดตั้งผ่าน Magisk บน Android แล้ว reboot ด้วยตัวเอง
+
+รองรับ macOS 12 ขึ้นไป ทั้ง Apple Silicon และ Intel รวมไฟล์ที่ต้องใช้ไว้ในแอป ไม่ต้องติดตั้ง Python หรือ Homebrew ใช้ OpenSSL, zip และ unzip ที่มากับ macOS แอปเซ็นแบบ ad hoc สำหรับใช้งานในเครื่อง ยังไม่ได้ notarize สำหรับแจกจ่าย จึงอาจมีการแจ้งเตือนจาก macOS เมื่อส่งต่อ
+
+ตรวจ Basic Constraints ว่าเป็น CA:TRUE ไม่เขียน certificate ลง trust store ของ Mac และไม่เชื่อมต่อหรือติดตั้ง module บน Android อัตโนมัติ ไม่ข้าม certificate pinning การรองรับ ROM/Android ต้องทดสอบกับเครื่องเป้าหมาย สคริปต์ต้นแบบมีการจัดการ Conscrypt APEX ด้วย bind mounts
+
+## Build จากซอร์ส
+
+เปิด `Burp2Magisk.xcodeproj` ด้วย Xcode เลือก scheme **Burp2Magisk** และปลายทาง **My Mac** แล้วกด **⌘R** โปรเจกต์ไม่มี external dependencies
+
+ต้องมี Xcode Command Line Tools แล้วรัน `bash build.sh` ผลลัพธ์อยู่ใน `dist/` ซอร์สหน้าต่างอยู่ใน `Sources/main.swift` และสคริปต์แพ็กใน `Resources/`
+
+## โครงสร้างโปรเจกต์
+
+```text
+Burp2Magisk.xcodeproj/   โปรเจกต์ Xcode
+Sources/main.swift        Swift AppKit GUI
+Resources/Info.plist      ข้อมูลแอป
+Resources/*.sh            ตรวจ certificate และสร้าง module
+Resources/ModuleTemplate/ installer และ boot script ที่อ่านแก้ไขได้
+build.sh                  build แอป Universal และ ZIP
+```
+
+## Git
+
+Repository นี้ไม่รวม certificate, private key, ZIP ต้นฉบับ, executable เดิม, build outputs หรือการตั้งค่า Xcode ของแต่ละคน ตรวจรายการก่อน commit ด้วย `git status` แล้วเพิ่ม source ด้วย `git add .` และ `git commit -m "Initial macOS app project"` จากนั้นตั้ง remote ของคุณและ push
+
+## Magisk template ของ Burp2Magisk
+
+ซอร์สอยู่ใน `Resources/ModuleTemplate/` ใช้ `module.prop` และ `customize.sh` ตาม [Magisk Developer Guide](https://topjohnwu.github.io/Magisk/guides.html) ZIP สำหรับติดตั้งผ่านแอป Magisk เท่านั้น ไม่รองรับ recovery flashing
+
+Legacy system store ใช้ Magisk system overlay ส่วน Conscrypt APEX ใช้สคริปต์ Burp2Magisk ที่ทำ snapshot ของ CA เดิมทั้งหมด แล้วสร้าง tmpfs overlay ใน mount namespace ของ init ช่วง post-fs-data หากเตรียม overlay ไม่สำเร็จจะพยายามถอด mount กลับ ไม่แก้ไฟล์ APEX ต้นฉบับ ตรวจ log ได้ที่ `/data/adb/modules/burp_ca_<hash>/boot.log` การทำงานนี้ต้องทดสอบบน Android/ROM เป้าหมาย ยังไม่รับรองว่าใช้ได้ทุกเครื่อง และไม่มีการอัปเดตอัตโนมัติ
+
+สคริปต์ปัจจุบันเขียนใหม่สำหรับ Burp2Magisk และไม่มีการโหลด template ZIP ภายนอก ประวัติโปรเจกต์เคยใช้ template ของ Reqable/CustomCACert; เก็บข้อความ GPL-3.0 ในโฟลเดอร์ template เพื่อคงเงื่อนไขการแจกจ่ายเดิม

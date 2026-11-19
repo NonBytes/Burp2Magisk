@@ -1,0 +1,13 @@
+work/
+dist/
+.DS_Store
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+Resources/reqable-magisk-template.zip
+Burp-CA-to-Magisk.command
+*.der
+*.pem
+*.key
+*.p12
