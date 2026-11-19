@@ -4,9 +4,9 @@ A native Swift/AppKit macOS app that converts a Burp Suite CA certificate (`.der
 
 ![Burp2Magisk macOS](docs/images/macos-app.png)
 
-## Download v1.1.0
+## Download v1.1.1
 
-Download [Burp2Magisk-macOS.zip](https://github.com/NonBytes/Burp2Magisk/releases/download/v1.1.0/Burp2Magisk-macOS.zip) from [GitHub Releases](https://github.com/NonBytes/Burp2Magisk/releases/latest) for **macOS 12+ on Apple Silicon (arm64)**. No Python or Homebrew required.
+Download [Burp2Magisk-macOS.zip](https://github.com/NonBytes/Burp2Magisk/releases/download/v1.1.1/Burp2Magisk-macOS.zip) from [GitHub Releases](https://github.com/NonBytes/Burp2Magisk/releases/latest) for **macOS 12+ on Apple Silicon (arm64)**. No Python or Homebrew required.
 
 To verify the download checksum, place `Burp2Magisk-macOS.zip` and `SHA256SUMS.txt` in the same folder and run:
 

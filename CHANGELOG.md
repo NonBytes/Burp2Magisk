@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+- Add a standard macOS main menu (`App`, `File`, `Window`) so system keyboard shortcuts (`⌘Q`, `⌘W`, `⌘O`, `⌘H`, `⌘M`) work properly.
+- Center-align text and headers inside the four dashboard metric cards, fix the idle `CA Status` shield icon, and replace the raw `subject_hash_old` caption with `Android CA hash`.
+- Update the README screenshot.
+
 ## 1.1.0
 
 - Redesign the macOS interface into a modern single-window dashboard with a light/dark indigo-lavender theme, live metric cards (`CA Status`, `Expiration`, `Subject Hash`, `ADB Device`), contextual status banner, and pastel Quick Actions tiles.

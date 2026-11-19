@@ -21,17 +21,19 @@ final class MetricCardView: CardView {
         header.spacing = 5
 
         valueLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        valueLabel.alignment = .center
         valueLabel.lineBreakMode = .byTruncatingTail
         valueLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         captionLabel.font = .systemFont(ofSize: 10)
         captionLabel.textColor = .tertiaryLabelColor
+        captionLabel.alignment = .center
         captionLabel.lineBreakMode = .byTruncatingTail
         captionLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.alignment = .leading
+        stack.alignment = .centerX
         stack.spacing = 3
 
         for view in [icon, label] {
@@ -46,8 +48,9 @@ final class MetricCardView: CardView {
         addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             icon.widthAnchor.constraint(equalToConstant: 16),
             icon.heightAnchor.constraint(equalToConstant: 16),

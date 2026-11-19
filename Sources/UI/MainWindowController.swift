@@ -354,14 +354,14 @@ final class MainWindowController: NSObject {
     private func refreshCertificateMetrics() {
         guard let entry else {
             caMetric.configure(
-                symbol: "doc.badge.questionmark", tint: .secondaryLabelColor,
+                symbol: "shield", tint: .secondaryLabelColor,
                 value: "Waiting", caption: "No certificate selected")
             expiryMetric.configure(
                 symbol: "calendar", tint: .secondaryLabelColor,
                 value: "—", caption: "Not inspected yet")
             hashMetric.configure(
                 symbol: "number", tint: .secondaryLabelColor,
-                value: "—", caption: "subject_hash_old")
+                value: "—", caption: "Android CA hash")
             return
         }
         switch entry.state {
