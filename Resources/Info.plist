@@ -2,6 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>Burp2Magisk</string>
+<key>CFBundleIconFile</key><string>Burp2Magisk</string>
 <key>CFBundleIdentifier</key><string>local.burp2magisk.app</string>
 <key>CFBundleName</key><string>Burp2Magisk</string>
 <key>CFBundleDisplayName</key><string>Burp2Magisk</string>
