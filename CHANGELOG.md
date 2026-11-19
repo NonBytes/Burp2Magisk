@@ -7,6 +7,11 @@
   batch cleanly if any certificate fails validation, without touching the destination.
 - Remember recently used certificates and offer them from a menu next to the file picker.
 - Removed the GitHub Actions CI workflow; run `scripts/test.sh` and `build.sh` locally instead.
+- Add an opt-in one-click install to a connected Android device: after a successful build,
+  detecting an authorized `adb` device shows an "ติดตั้งผ่าน ADB…" button that pushes the ZIP
+  and runs Magisk's own `--install-module`. This changes the project's earlier policy of never
+  connecting to Android; the app still never reboots the device without a separate explicit
+  confirmation, and the detection step itself performs no action on the phone.
 
 ## 1.0.1
 

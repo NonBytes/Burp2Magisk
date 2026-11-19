@@ -143,10 +143,23 @@ do {
             certificate: fixture.appendingPathComponent("ca.pem"))
     }
 
+    // ADB device parsing never shells out; verify it accepts only authorized, online devices.
+    let devices = ADBInstaller.parseDevices(
+        """
+        List of devices attached
+        emulator-5554\tdevice
+        1234567890ABCDEF\tunauthorized
+        PQR\toffline
+
+        """)
+    try require(devices == [ADBInstaller.Device(serial: "emulator-5554")], "Wrong device parsing")
+    try require(
+        ADBInstaller.parseDevices("List of devices attached\n").isEmpty, "Expected no devices")
+
     print(
         "PASS: DER/PEM, Unicode/quoted paths, ZIP contents, multi-certificate bundling, "
             + "duplicate dedup, invalid/non-CA/bundle/missing input, missing resources, "
-            + "destination preservation, certificate preview"
+            + "destination preservation, certificate preview, ADB device parsing"
     )
 } catch {
     fputs("FAIL: \(error.localizedDescription)\n", stderr)

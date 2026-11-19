@@ -13,11 +13,18 @@
 1. แตก `Burp2Magisk-macOS.zip` แล้วลาก `Burp2Magisk.app` ไป Applications และเปิดแอป
 2. ลาก certificate ลงในหน้าต่าง หรือกด **เลือกไฟล์…**
 3. กด **สร้าง Magisk ZIP…** แล้วเลือกที่บันทึก
-4. นำ ZIP ผลลัพธ์ไปติดตั้งผ่าน Magisk บน Android แล้ว reboot ด้วยตัวเอง
+4. นำ ZIP ผลลัพธ์ไปติดตั้งผ่าน Magisk บน Android แล้ว reboot ด้วยตัวเอง หรือถ้าเชื่อมอุปกรณ์ผ่าน
+   USB debugging ไว้ (และอนุญาต root ให้ ADB แล้ว) แอปจะตรวจพบอุปกรณ์หลังสร้าง ZIP สำเร็จ และมีปุ่ม
+   **ติดตั้งผ่าน ADB…** ให้กดเพื่อ push และติดตั้งโมดูลให้ทันที — การกดปุ่มนี้คือการยืนยันของคุณเอง
+   ไม่มีการเชื่อมต่อหรือ push ใด ๆ เกิดขึ้นถ้าไม่ได้กด และแอปจะไม่สั่ง reboot ให้เองเด็ดขาด (มีปุ่ม
+   reboot แยกต่างหากให้กดเองอีกครั้งหลังติดตั้งสำเร็จ ถ้าต้องการ)
 
 รองรับ macOS 12 ขึ้นไป บน Apple Silicon (arm64) รวมไฟล์ที่ต้องใช้ไว้ในแอป ไม่ต้องติดตั้ง Python หรือ Homebrew ใช้ OpenSSL, zip และ unzip ที่มากับ macOS แอปเซ็นแบบ ad hoc สำหรับใช้งานในเครื่อง ยังไม่ได้ notarize สำหรับแจกจ่าย จึงอาจมีการแจ้งเตือนจาก macOS เมื่อส่งต่อ
 
-ตรวจ Basic Constraints ว่าเป็น CA:TRUE ไม่เขียน certificate ลง trust store ของ Mac และไม่เชื่อมต่อหรือติดตั้ง module บน Android อัตโนมัติ ไม่ข้าม certificate pinning การรองรับ ROM/Android ต้องทดสอบกับเครื่องเป้าหมาย สคริปต์ต้นแบบมีการจัดการ Conscrypt APEX ด้วย bind mounts
+ตรวจ Basic Constraints ว่าเป็น CA:TRUE ไม่เขียน certificate ลง trust store ของ Mac ไม่ข้ามหรือ
+แตะต้อง certificate pinning การรองรับ ROM/Android ต้องทดสอบกับเครื่องเป้าหมาย สคริปต์ต้นแบบมีการ
+จัดการ Conscrypt APEX ด้วย bind mounts ฟีเจอร์ติดตั้งผ่าน ADB เป็นทางเลือก (opt-in) ต้องมี Android
+SDK Platform Tools (`adb`) ติดตั้งแยกไว้ และต้องกดปุ่มเองทุกครั้ง แอปไม่เชื่อมต่ออุปกรณ์เองโดยอัตโนมัติ
 
 ## เปิดแอปครั้งแรก
 

@@ -5,6 +5,9 @@ final class MainWindowController: NSObject {
     private var window: NSWindow!
     private var entries: [CertificateEntry] = []
     private(set) var isBuilding = false
+    private var isInstalling = false
+    private var pendingInstallZIP: URL?
+    private var pendingInstallDevices: [ADBInstaller.Device] = []
 
     private enum StatusKind { case idle, ready, error }
 
@@ -72,6 +75,7 @@ final class MainWindowController: NSObject {
         target: nil, action: nil)
     private let browseButton = NSButton(title: "เลือกไฟล์…", target: nil, action: nil)
     private let buildButton = AccentButton(title: "สร้าง Magisk ZIP…")
+    private let adbButton = NSButton(title: "ติดตั้งผ่าน ADB…", target: nil, action: nil)
 
     // MARK: Launch
 
@@ -154,6 +158,15 @@ final class MainWindowController: NSObject {
         buildButton.isEnabled = false
         buildButton.toolTip = "สร้าง ZIP สำหรับติดตั้งผ่าน Magisk จากไฟล์ที่เลือก"
 
+        adbButton.bezelStyle = .rounded
+        adbButton.font = .systemFont(ofSize: 12)
+        adbButton.target = self
+        adbButton.action = #selector(installViaADB)
+        adbButton.isHidden = true
+        adbButton.toolTip =
+            "Push ZIP ไปยังอุปกรณ์ที่เชื่อมต่อผ่าน adb แล้วรัน magisk --install-module "
+            + "(ต้องเปิด USB debugging และอนุญาต root ให้ ADB บนอุปกรณ์)"
+
         card.onFiles = { [weak self] urls in self?.addCertificates(urls) }
         card.onBrowse = { [weak self] in self?.pick() }
         card.toolTip = "ลากไฟล์ใบรับรองมาวาง หรือคลิกเพื่อเลือกไฟล์"
@@ -185,6 +198,7 @@ final class MainWindowController: NSObject {
         recentButton.translatesAutoresizingMaskIntoConstraints = false
         browseButton.translatesAutoresizingMaskIntoConstraints = false
         buildButton.translatesAutoresizingMaskIntoConstraints = false
+        adbButton.translatesAutoresizingMaskIntoConstraints = false
 
         badge.addSubview(headerIcon)
         content.addSubview(badge)
@@ -198,6 +212,7 @@ final class MainWindowController: NSObject {
         content.addSubview(recentButton)
         content.addSubview(browseButton)
         content.addSubview(buildButton)
+        content.addSubview(adbButton)
 
         placeholderStack.orientation = .vertical
         placeholderStack.alignment = .centerX
@@ -275,6 +290,11 @@ final class MainWindowController: NSObject {
                 lessThanOrEqualTo: content.trailingAnchor, constant: -24),
             statusLabel.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 16),
 
+            adbButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 10),
+            adbButton.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
+            adbButton.trailingAnchor.constraint(
+                lessThanOrEqualTo: content.trailingAnchor, constant: -24),
+
             footerLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
             footerLabel.centerYAnchor.constraint(equalTo: buildButton.centerYAnchor),
 
@@ -318,6 +338,7 @@ final class MainWindowController: NSObject {
         card.alphaValue = isBusy ? 0.6 : 1
         browseButton.isEnabled = !isBusy
         recentButton.isEnabled = !isBusy
+        adbButton.isEnabled = !isBusy && !isInstalling
         buildButton.isEnabled = !isBusy && canBuild
         spinner.isHidden = !isBusy
         statusIcon.isHidden = isBusy
@@ -484,6 +505,7 @@ final class MainWindowController: NSObject {
         panel.nameFieldStringValue = "BurpCA-Magisk.zip"
         panel.allowedContentTypes = [.zip]
         guard panel.runModal() == .OK, let destination = panel.url else { return }
+        hideADBButton()
         setBusy(true)
         setStatus("กำลังตรวจ certificate และสร้าง ZIP…", kind: .ready)
         let builder = ModuleBuilder(resourcesURL: Bundle.main.resourceURL)
@@ -511,7 +533,131 @@ final class MainWindowController: NSObject {
                     )
                     self.rememberRecent(certificates)
                     NSWorkspace.shared.activateFileViewerSelecting([destination])
+                    self.checkForADBDevice(destination)
                 }
+            }
+        }
+    }
+
+    // MARK: ADB install (opt-in; nothing here runs without an explicit click)
+
+    /// Only reads `adb devices`; performs no action on the phone. Shows the
+    /// install button when a device is detected for the ZIP just built.
+    private func checkForADBDevice(_ destination: URL) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let adb = ADBInstaller.locateADB() else {
+                DispatchQueue.main.async { self?.hideADBButton() }
+                return
+            }
+            let devices = ADBInstaller.connectedDevices(adb: adb)
+            DispatchQueue.main.async { self?.updateADBButton(devices: devices, zip: destination) }
+        }
+    }
+
+    private func hideADBButton() {
+        pendingInstallZIP = nil
+        pendingInstallDevices = []
+        adbButton.isHidden = true
+    }
+
+    private func updateADBButton(devices: [ADBInstaller.Device], zip: URL) {
+        guard !devices.isEmpty else {
+            hideADBButton()
+            return
+        }
+        pendingInstallZIP = zip
+        pendingInstallDevices = devices
+        adbButton.title =
+            devices.count == 1
+            ? "ติดตั้งผ่าน ADB ไปที่ \(devices[0].serial)…"
+            : "ติดตั้งผ่าน ADB (\(devices.count) เครื่อง)…"
+        adbButton.isHidden = false
+    }
+
+    @objc private func installViaADB() {
+        guard !isBuilding, !isInstalling, let zip = pendingInstallZIP else { return }
+        guard pendingInstallDevices.count > 1 else {
+            if let device = pendingInstallDevices.first {
+                performADBInstall(zip: zip, device: device)
+            }
+            return
+        }
+        let menu = NSMenu()
+        for device in pendingInstallDevices {
+            let item = NSMenuItem(
+                title: device.serial, action: #selector(selectADBDevice(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = device.serial
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: adbButton.bounds.height), in: adbButton)
+    }
+
+    @objc private func selectADBDevice(_ sender: NSMenuItem) {
+        guard let serial = sender.representedObject as? String, let zip = pendingInstallZIP,
+            let device = pendingInstallDevices.first(where: { $0.serial == serial })
+        else { return }
+        performADBInstall(zip: zip, device: device)
+    }
+
+    private func performADBInstall(zip: URL, device: ADBInstaller.Device) {
+        isInstalling = true
+        adbButton.isEnabled = false
+        setStatus("กำลังติดตั้งผ่าน ADB ไปที่ \(device.serial)…", kind: .ready)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let errorMessage: String?
+            do {
+                try ADBInstaller().install(zip: zip, onto: device)
+                errorMessage = nil
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            DispatchQueue.main.async {
+                self?.finishADBInstall(error: errorMessage, device: device)
+            }
+        }
+    }
+
+    private func finishADBInstall(error: String?, device: ADBInstaller.Device) {
+        isInstalling = false
+        adbButton.isEnabled = true
+        if let error {
+            setStatus("ติดตั้งผ่าน ADB ไม่สำเร็จ", kind: .error)
+            let alert = NSAlert()
+            alert.messageText = "ติดตั้งผ่าน ADB ไม่สำเร็จ"
+            alert.informativeText = error
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        setSuccessStatus("ติดตั้งลงอุปกรณ์ \(device.serial) สำเร็จ")
+        let alert = NSAlert()
+        alert.messageText = "ติดตั้งโมดูลสำเร็จ"
+        alert.informativeText = "โมดูลติดตั้งแล้วบน \(device.serial) ต้อง reboot อุปกรณ์เพื่อให้มีผล"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Reboot ตอนนี้")
+        alert.addButton(withTitle: "ปิด")
+        if alert.runModal() == .alertFirstButtonReturn {
+            rebootDevice(device)
+        }
+    }
+
+    private func rebootDevice(_ device: ADBInstaller.Device) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let errorMessage: String?
+            do {
+                try ADBInstaller().reboot(device)
+                errorMessage = nil
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            guard let message = errorMessage else { return }
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "สั่ง Reboot ไม่สำเร็จ"
+                alert.informativeText = message
+                alert.alertStyle = .warning
+                alert.runModal()
             }
         }
     }

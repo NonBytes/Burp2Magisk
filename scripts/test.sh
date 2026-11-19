@@ -16,6 +16,7 @@ done
 cp "$fixture/ca.der" "$fixture/ใบรับรอง 'quoted' \$name.der"
 cat "$fixture/ca.pem" "$fixture/ca.pem" > "$fixture/bundle.pem"
 printf 'invalid certificate' > "$fixture/malformed.der"
-/usr/bin/swiftc Sources/Services/ModuleBuilder.swift Tests/main.swift \
+/usr/bin/swiftc Sources/Services/ModuleBuilder.swift Sources/Services/ADBInstaller.swift \
+  Tests/main.swift \
   -module-cache-path "$PWD/work/module-cache" -o "$fixture/integration-tests"
 "$fixture/integration-tests" "$PWD/Resources" "$fixture"

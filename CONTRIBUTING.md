@@ -13,6 +13,7 @@ and run, or use `bash build.sh` for an arm64 (Apple Silicon) app and distributio
 | Shared colors | `Sources/UI/Theme.swift` |
 | Drag/drop card, per-certificate row and buttons | `Sources/UI/Components/` |
 | Background conversion, preview and atomic ZIP export | `Sources/Services/ModuleBuilder.swift` |
+| Opt-in ADB device detect/push/install/reboot | `Sources/Services/ADBInstaller.swift` |
 | DER/PEM validation and subject hash | `Resources/burp-ca-to-android.sh` |
 | Read-only certificate preview (subject/expiry/hash) | `Resources/burp-ca-info.sh` |
 | Magisk ZIP assembly for one or more certificates | `Resources/der-to-magisk.sh` |
@@ -35,6 +36,14 @@ of subject hashes so rebuilding the same certificate set keeps the same id,
 while a different set gets its own. `burp-ca-info.sh` never writes a file; it
 only validates and prints a certificate's subject, expiry and subject hash so
 the GUI can preview a selection before building.
+
+`ADBInstaller` is the one component that reaches outside the Mac. Detecting a
+device (`adb devices`) performs no action on the phone; pushing a ZIP,
+installing it with Magisk's `--install-module`, and rebooting are each a
+separate, explicit call the GUI only ever makes in response to the person
+clicking the corresponding button. It never reboots on its own, and the pushed
+temporary file on the device is always removed afterward, success or failure.
+Keep this one-click-per-irreversible-step boundary when touching this file.
 
 ## Checks before a contribution
 
