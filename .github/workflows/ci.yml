@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Integration suite
+        run: bash scripts/test.sh
+
+      - name: swift-format lint
+        run: xcrun swift-format lint --strict --recursive Sources scripts Tests
+
+      - name: Universal build
+        run: bash build.sh
+
+      - name: Verify codesign
+        run: codesign --verify --deep --strict dist/Burp2Magisk.app
+
+      - name: Verify universal binary
+        run: |
+          lipo -info dist/Burp2Magisk.app/Contents/MacOS/Burp2Magisk | grep -q 'x86_64 arm64\|arm64 x86_64'
+
+      - name: Validate Info.plist
+        run: plutil -lint dist/Burp2Magisk.app/Contents/Info.plist
