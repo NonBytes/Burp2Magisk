@@ -15,7 +15,8 @@ while IFS= read -r source; do sources+=("$source"); done < <(find Sources -name 
 cp Resources/Info.plist "$app/Contents/Info.plist"
 cp Resources/*.sh "$app/Contents/Resources/"
 mkdir -p "$app/Contents/Resources/ModuleTemplate"
-cp -R Resources/ModuleTemplate/. "$app/Contents/Resources/ModuleTemplate/"
+cp Resources/ModuleTemplate/LICENSE Resources/ModuleTemplate/mount-ca.sh Resources/ModuleTemplate/post-fs-data.sh \
+  "$app/Contents/Resources/ModuleTemplate/"
 cp Resources/Burp2Magisk.icns Resources/Burp2Magisk.png Resources/Burp2MagiskGlyph.png "$app/Contents/Resources/"
 /usr/bin/codesign --force --deep --sign - "$app"
 /usr/bin/codesign --verify --deep "$app"

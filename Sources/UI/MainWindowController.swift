@@ -3,19 +3,27 @@ import UniformTypeIdentifiers
 
 final class MainWindowController: NSObject {
     private var window: NSWindow!
-    private var entries: [CertificateEntry] = []
+    private var entry: CertificateEntry?
     private(set) var isBuilding = false
-    private var isInstalling = false
-    private var pendingInstallZIP: URL?
+    private(set) var isInstalling = false
+    private var isActive: Bool { isBuilding || isInstalling }
     private var pendingInstallDevices: [ADBInstaller.Device] = []
+    private var adbFound = false
+    private var adbChecked = false
+    private var adbCheckGeneration = 0
+    private var inspectionGeneration = 0
+    private var windowObserver: NSObjectProtocol?
+
+    deinit {
+        if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) }
+    }
 
     private enum StatusKind { case idle, ready, error }
 
-    /// One selected certificate and the state of its background preview.
+    /// The selected certificate and the state of its background preview.
     private struct CertificateEntry {
         let url: URL
         var state: State
-        let row: CertificateRowView
 
         enum State {
             case validating
@@ -28,33 +36,26 @@ final class MainWindowController: NSObject {
     private static let recentLimit = 6
 
     // Header
-    private let badge = BadgeView()
-    private let headerIcon = ArtworkView(
-        resource: "Burp2MagiskGlyph", template: true,
-        fallbackSymbol: "checkmark.seal", fallbackTint: .white)
     private let headerTitle = NSTextField(labelWithString: "Burp2Magisk")
     private let headerSubtitle = NSTextField(
-        wrappingLabelWithString: "แปลง Burp CA certificate เป็น Magisk module สำหรับ Android")
+        wrappingLabelWithString: "Convert a Burp CA certificate into a Magisk module for Android")
+    private let statusPill = StatusPillView()
 
-    // Card: placeholder
-    private let card = DropCardView()
-    private let cardIcon = ArtworkView(
-        resource: "Burp2Magisk", template: false,
-        fallbackSymbol: "doc.zipper", fallbackTint: Theme.accent)
-    private let cardTitle = NSTextField(
-        wrappingLabelWithString: "ลากไฟล์ใบรับรอง Burp มาวางที่นี่")
-    private let cardSubtitle = NSTextField(
-        wrappingLabelWithString: "รองรับไฟล์ .der และ .pem เลือกได้หลายไฟล์พร้อมกัน")
-    private let placeholderStack = NSStackView()
+    // Certificate hero card
+    private let heroCard = CardView()
+    private let certificateMicro = Theme.microLabel("Certificate")
+    private let dropZone = DropCardView()
+    private let certificateRow = CertificateRowView()
 
-    // Card: selected certificates list
-    private let rowsScrollView = NSScrollView()
-    private let rowsStack = NSStackView()
-    private let clearButton = NSButton(
-        image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: nil)!,
-        target: nil, action: nil)
+    // Metric cards
+    private let metricStack = NSStackView()
+    private let caMetric = MetricCardView(title: "CA Status")
+    private let expiryMetric = MetricCardView(title: "Expiration")
+    private let hashMetric = MetricCardView(title: "Subject Hash")
+    private let adbMetric = MetricCardView(title: "ADB Device")
 
-    // Status
+    // Status banner
+    private let banner = CardView()
     private let statusIcon = SymbolImageView(
         symbol: "info.circle.fill", pointSize: 15, tint: .secondaryLabelColor)
     private let spinner: NSProgressIndicator = {
@@ -65,251 +66,197 @@ final class MainWindowController: NSObject {
         indicator.isHidden = true
         return indicator
     }()
-    private let statusLabel = NSTextField(wrappingLabelWithString: "เลือกไฟล์ใบรับรองเพื่อเริ่ม")
+    private let statusLabel = NSTextField(
+        wrappingLabelWithString: "Select a certificate file to begin")
+    private let ctaButton = AccentButton(title: "Choose File", height: 26, fontSize: 12)
 
-    // Footer actions
-    private let footerLabel = NSTextField(
-        wrappingLabelWithString: "สร้าง ZIP สำหรับติดตั้งผ่าน Magisk บน Android")
-    private let recentButton = NSButton(
-        image: NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)!,
-        target: nil, action: nil)
-    private let browseButton = NSButton(title: "เลือกไฟล์…", target: nil, action: nil)
-    private let buildButton = AccentButton(title: "สร้าง Magisk ZIP…")
-    private let adbButton = NSButton(title: "ติดตั้งผ่าน ADB…", target: nil, action: nil)
+    // Quick actions
+    private let quickActionsLabel = NSTextField(labelWithString: "Quick Actions")
+    private let tileStack = NSStackView()
+    private let chooseTile = ActionTileView(
+        symbol: "doc.badge.plus", tint: Theme.tileBlue, title: "Choose File")
+    private let recentTile = ActionTileView(
+        symbol: "clock.arrow.circlepath", tint: Theme.tileLavender, title: "Recent")
+    private let zipTile = ActionTileView(
+        symbol: "archivebox.fill", tint: Theme.tileMint, title: "Create ZIP")
+    private let adbTile = ActionTileView(
+        symbol: "cable.connector", tint: Theme.tilePeach, title: "Install ADB")
 
     // MARK: Launch
 
     func showWindow() {
         configureViews()
-        let contentRect = NSRect(x: 0, y: 0, width: 620, height: 400)
+        let contentRect = NSRect(x: 0, y: 0, width: 760, height: 534)
         window = NSWindow(
             contentRect: contentRect, styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.title = "Burp2Magisk"
-        window.subtitle = "แปลง Burp CA เป็น Magisk module"
-        window.contentMinSize = NSSize(width: 600, height: 380)
-        installLayout(in: window.contentView!)
+        window.subtitle = "Convert Burp CA to Magisk module"
+        window.contentMinSize = NSSize(width: 720, height: 518)
+        let backdrop = WindowBackdropView(frame: contentRect)
+        window.contentView = backdrop
+        installLayout(in: backdrop)
         NSApp.setActivationPolicy(.regular)
         window.center()
-        window.initialFirstResponder = card
+        window.initialFirstResponder = dropZone
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        refreshRecentButton()
+        refreshStatus()
+        checkForADBDevice()
+        windowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            guard let self, !self.isActive else { return }
+            self.checkForADBDevice()
+        }
     }
 
     // MARK: View configuration
 
     private func configureViews() {
-        headerTitle.font = .preferredFont(forTextStyle: .title2)
+        headerTitle.font = .systemFont(ofSize: 20, weight: .bold)
 
-        headerSubtitle.font = .systemFont(ofSize: 13)
+        headerSubtitle.font = .systemFont(ofSize: 12)
         headerSubtitle.textColor = .secondaryLabelColor
 
-        cardTitle.font = .systemFont(ofSize: 15, weight: .semibold)
-        cardTitle.alignment = .center
-        cardSubtitle.font = .systemFont(ofSize: 12)
-        cardSubtitle.textColor = .secondaryLabelColor
-        cardSubtitle.alignment = .center
+        certificateRow.isHidden = true
+        certificateRow.onRemove = { [weak self] in self?.clearSelection() }
+        certificateRow.onReplace = { [weak self] in self?.pick() }
 
-        rowsScrollView.drawsBackground = false
-        rowsScrollView.hasVerticalScroller = true
-        rowsScrollView.autohidesScrollers = true
-        rowsScrollView.isHidden = true
+        dropZone.onFile = { [weak self] url in self?.selectCertificate(url) }
+        dropZone.onBrowse = { [weak self] in self?.pick() }
+        dropZone.setAccessibilityLabel("Certificate drop area")
 
-        rowsStack.orientation = .vertical
-        rowsStack.alignment = .leading
-        rowsStack.spacing = 2
-
-        clearButton.isBordered = false
-        clearButton.imagePosition = .imageOnly
-        clearButton.imageScaling = .scaleProportionallyDown
-        clearButton.setAccessibilityLabel("ล้างไฟล์ที่เลือกทั้งหมด")
-        clearButton.toolTip = "ล้างไฟล์ที่เลือกทั้งหมด"
-        clearButton.target = self
-        clearButton.action = #selector(clearAll)
-        clearButton.isHidden = true
-
-        statusLabel.font = .systemFont(ofSize: 13)
+        statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
-        statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        statusLabel.lineBreakMode = .byTruncatingTail
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        footerLabel.font = .systemFont(ofSize: 11)
-        footerLabel.textColor = .tertiaryLabelColor
+        quickActionsLabel.font = .systemFont(ofSize: 13, weight: .semibold)
 
-        recentButton.isBordered = false
-        recentButton.imagePosition = .imageOnly
-        recentButton.imageScaling = .scaleProportionallyDown
-        recentButton.setAccessibilityLabel("ไฟล์ล่าสุด")
-        recentButton.toolTip = "ไฟล์ล่าสุด"
-        recentButton.target = self
-        recentButton.action = #selector(showRecentMenu)
-        recentButton.isHidden = true
+        banner.fillColor = Theme.bannerFill
+        banner.borderColor = Theme.bannerBorder
+        banner.cornerRadius = 12
 
-        browseButton.bezelStyle = .rounded
-        browseButton.controlSize = .large
-        browseButton.font = .systemFont(ofSize: 13)
-        browseButton.target = self
-        browseButton.action = #selector(pick)
-        browseButton.toolTip = "เปิดหน้าต่างเลือกไฟล์ใบรับรอง (เลือกได้หลายไฟล์)"
+        ctaButton.target = self
+        ctaButton.keyEquivalent = "\r"
+        ctaButton.toolTip = "Primary action for the current state"
 
-        buildButton.target = self
-        buildButton.action = #selector(makeZip)
-        buildButton.keyEquivalent = "\r"
-        buildButton.isEnabled = false
-        buildButton.toolTip = "สร้าง ZIP สำหรับติดตั้งผ่าน Magisk จากไฟล์ที่เลือก"
+        chooseTile.onTap = { [weak self] in self?.pick() }
+        chooseTile.toolTip = "Choose a certificate file (.der or .pem)"
+        recentTile.onTap = { [weak self] in self?.showRecentMenu() }
+        recentTile.toolTip = "Recently used certificates"
+        zipTile.onTap = { [weak self] in self?.makeZip() }
+        zipTile.toolTip = "Build a Magisk module ZIP from the selected certificate"
+        adbTile.onTap = { [weak self] in self?.installViaADB() }
+        adbTile.toolTip =
+            "Build and push the module ZIP over adb, then run magisk --install-module "
+            + "(requires USB debugging and ADB root access on the device)"
 
-        adbButton.bezelStyle = .rounded
-        adbButton.font = .systemFont(ofSize: 12)
-        adbButton.target = self
-        adbButton.action = #selector(installViaADB)
-        adbButton.isHidden = true
-        adbButton.toolTip =
-            "Push ZIP ไปยังอุปกรณ์ที่เชื่อมต่อผ่าน adb แล้วรัน magisk --install-module "
-            + "(ต้องเปิด USB debugging และอนุญาต root ให้ ADB บนอุปกรณ์)"
-
-        card.onFiles = { [weak self] urls in self?.addCertificates(urls) }
-        card.onBrowse = { [weak self] in self?.pick() }
-        card.toolTip = "ลากไฟล์ใบรับรองมาวาง หรือคลิกเพื่อเลือกไฟล์"
-        card.setAccessibilityLabel("พื้นที่รับไฟล์ใบรับรอง")
-        let click = NSClickGestureRecognizer(target: self, action: #selector(pick))
-        card.addGestureRecognizer(click)
-
-        headerIcon.setAccessibilityElement(false)
-        cardIcon.setAccessibilityElement(false)
         statusIcon.setAccessibilityElement(false)
-        spinner.setAccessibilityLabel("กำลังตรวจ certificate และสร้าง ZIP")
+        spinner.setAccessibilityLabel("Processing certificate")
+        updateControlsForActivity()
     }
 
     // MARK: Layout
 
     private func installLayout(in content: NSView) {
-        badge.translatesAutoresizingMaskIntoConstraints = false
-        headerIcon.translatesAutoresizingMaskIntoConstraints = false
-        headerTitle.translatesAutoresizingMaskIntoConstraints = false
-        headerSubtitle.translatesAutoresizingMaskIntoConstraints = false
-        card.translatesAutoresizingMaskIntoConstraints = false
-        placeholderStack.translatesAutoresizingMaskIntoConstraints = false
-        rowsScrollView.translatesAutoresizingMaskIntoConstraints = false
-        clearButton.translatesAutoresizingMaskIntoConstraints = false
-        statusIcon.translatesAutoresizingMaskIntoConstraints = false
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        footerLabel.translatesAutoresizingMaskIntoConstraints = false
-        recentButton.translatesAutoresizingMaskIntoConstraints = false
-        browseButton.translatesAutoresizingMaskIntoConstraints = false
-        buildButton.translatesAutoresizingMaskIntoConstraints = false
-        adbButton.translatesAutoresizingMaskIntoConstraints = false
-
-        badge.addSubview(headerIcon)
-        content.addSubview(badge)
-        content.addSubview(headerTitle)
-        content.addSubview(headerSubtitle)
-        content.addSubview(card)
-        content.addSubview(statusIcon)
-        content.addSubview(spinner)
-        content.addSubview(statusLabel)
-        content.addSubview(footerLabel)
-        content.addSubview(recentButton)
-        content.addSubview(browseButton)
-        content.addSubview(buildButton)
-        content.addSubview(adbButton)
-
-        placeholderStack.orientation = .vertical
-        placeholderStack.alignment = .centerX
-        placeholderStack.spacing = 4
-        for view in [cardIcon, cardTitle, cardSubtitle] {
+        for view in [
+            headerTitle, headerSubtitle, statusPill, heroCard, metricStack, banner,
+            quickActionsLabel, tileStack,
+        ] {
             view.translatesAutoresizingMaskIntoConstraints = false
-            placeholderStack.addArrangedSubview(view)
+            content.addSubview(view)
         }
-        placeholderStack.setCustomSpacing(10, after: cardIcon)
-        card.addSubview(placeholderStack)
+        for view in [certificateMicro, dropZone, certificateRow] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            heroCard.addSubview(view)
+        }
+        for view in [statusIcon, spinner, statusLabel, ctaButton] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            banner.addSubview(view)
+        }
 
-        rowsStack.translatesAutoresizingMaskIntoConstraints = false
-        rowsScrollView.documentView = rowsStack
-        card.addSubview(rowsScrollView)
-        card.addSubview(clearButton)
+        metricStack.orientation = .horizontal
+        metricStack.alignment = .top
+        metricStack.spacing = 12
+        metricStack.distribution = .fillEqually
+        for view in [caMetric, expiryMetric, hashMetric, adbMetric] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            metricStack.addArrangedSubview(view)
+        }
+
+        tileStack.orientation = .horizontal
+        tileStack.spacing = 12
+        tileStack.distribution = .fillEqually
+        for view in [chooseTile, recentTile, zipTile, adbTile] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            tileStack.addArrangedSubview(view)
+        }
 
         NSLayoutConstraint.activate([
-            badge.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
-            badge.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            badge.widthAnchor.constraint(equalToConstant: 44),
-            badge.heightAnchor.constraint(equalToConstant: 44),
-            headerIcon.centerXAnchor.constraint(equalTo: badge.centerXAnchor),
-            headerIcon.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
-            headerIcon.widthAnchor.constraint(equalToConstant: 24),
-            headerIcon.heightAnchor.constraint(equalToConstant: 24),
-
-            headerTitle.leadingAnchor.constraint(equalTo: badge.trailingAnchor, constant: 12),
-            headerTitle.trailingAnchor.constraint(
-                lessThanOrEqualTo: content.trailingAnchor, constant: -24),
-            headerTitle.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
+            // Header
+            headerTitle.topAnchor.constraint(equalTo: content.topAnchor, constant: 26),
+            headerTitle.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
             headerSubtitle.leadingAnchor.constraint(equalTo: headerTitle.leadingAnchor),
+            headerSubtitle.topAnchor.constraint(equalTo: headerTitle.bottomAnchor, constant: 2),
             headerSubtitle.trailingAnchor.constraint(
-                lessThanOrEqualTo: content.trailingAnchor, constant: -24),
-            headerSubtitle.topAnchor.constraint(equalTo: headerTitle.bottomAnchor, constant: 1),
+                lessThanOrEqualTo: statusPill.leadingAnchor, constant: -12),
+            statusPill.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            statusPill.centerYAnchor.constraint(equalTo: headerTitle.centerYAnchor, constant: 1),
 
-            card.topAnchor.constraint(equalTo: badge.bottomAnchor, constant: 20),
-            card.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            card.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
-            card.heightAnchor.constraint(equalToConstant: 172),
+            // Certificate hero card
+            heroCard.topAnchor.constraint(equalTo: headerSubtitle.bottomAnchor, constant: 18),
+            heroCard.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
+            heroCard.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            heroCard.heightAnchor.constraint(greaterThanOrEqualToConstant: 146),
+            certificateMicro.topAnchor.constraint(equalTo: heroCard.topAnchor, constant: 14),
+            certificateMicro.leadingAnchor.constraint(
+                equalTo: heroCard.leadingAnchor, constant: 18),
+            dropZone.topAnchor.constraint(equalTo: certificateMicro.bottomAnchor, constant: 10),
+            dropZone.leadingAnchor.constraint(equalTo: heroCard.leadingAnchor, constant: 18),
+            dropZone.trailingAnchor.constraint(equalTo: heroCard.trailingAnchor, constant: -18),
+            dropZone.bottomAnchor.constraint(equalTo: heroCard.bottomAnchor, constant: -14),
+            certificateRow.topAnchor.constraint(equalTo: dropZone.topAnchor),
+            certificateRow.bottomAnchor.constraint(equalTo: dropZone.bottomAnchor),
+            certificateRow.leadingAnchor.constraint(equalTo: dropZone.leadingAnchor),
+            certificateRow.trailingAnchor.constraint(equalTo: dropZone.trailingAnchor),
 
-            placeholderStack.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-            placeholderStack.centerYAnchor.constraint(equalTo: card.centerYAnchor),
-            placeholderStack.leadingAnchor.constraint(
-                greaterThanOrEqualTo: card.leadingAnchor, constant: 20),
-            placeholderStack.trailingAnchor.constraint(
-                lessThanOrEqualTo: card.trailingAnchor, constant: -20),
-            cardIcon.widthAnchor.constraint(equalToConstant: 44),
-            cardIcon.heightAnchor.constraint(equalToConstant: 44),
-            cardTitle.widthAnchor.constraint(lessThanOrEqualToConstant: 470),
+            // Metric row
+            metricStack.topAnchor.constraint(equalTo: heroCard.bottomAnchor, constant: 12),
+            metricStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
+            metricStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            metricStack.heightAnchor.constraint(equalToConstant: 90),
 
-            rowsScrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
-            rowsScrollView.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
-            rowsScrollView.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
-            rowsScrollView.trailingAnchor.constraint(
-                equalTo: clearButton.leadingAnchor, constant: -8),
-            rowsStack.topAnchor.constraint(equalTo: rowsScrollView.contentView.topAnchor),
-            rowsStack.leadingAnchor.constraint(equalTo: rowsScrollView.contentView.leadingAnchor),
-            rowsStack.widthAnchor.constraint(equalTo: rowsScrollView.contentView.widthAnchor),
-
-            clearButton.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
-            clearButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
-            clearButton.widthAnchor.constraint(equalToConstant: 18),
-            clearButton.heightAnchor.constraint(equalToConstant: 18),
-
-            statusIcon.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            statusIcon.centerYAnchor.constraint(equalTo: statusLabel.centerYAnchor),
+            // Status banner
+            banner.topAnchor.constraint(equalTo: metricStack.bottomAnchor, constant: 12),
+            banner.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
+            banner.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            banner.heightAnchor.constraint(equalToConstant: 42),
+            statusIcon.leadingAnchor.constraint(equalTo: banner.leadingAnchor, constant: 14),
+            statusIcon.centerYAnchor.constraint(equalTo: banner.centerYAnchor),
             statusIcon.widthAnchor.constraint(equalToConstant: 16),
             statusIcon.heightAnchor.constraint(equalToConstant: 16),
-            spinner.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            spinner.centerYAnchor.constraint(equalTo: statusLabel.centerYAnchor),
+            spinner.leadingAnchor.constraint(equalTo: banner.leadingAnchor, constant: 14),
+            spinner.centerYAnchor.constraint(equalTo: banner.centerYAnchor),
             spinner.widthAnchor.constraint(equalToConstant: 16),
             spinner.heightAnchor.constraint(equalToConstant: 16),
             statusLabel.leadingAnchor.constraint(equalTo: statusIcon.trailingAnchor, constant: 8),
+            statusLabel.centerYAnchor.constraint(equalTo: banner.centerYAnchor),
             statusLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: content.trailingAnchor, constant: -24),
-            statusLabel.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 16),
+                lessThanOrEqualTo: ctaButton.leadingAnchor, constant: -12),
+            ctaButton.trailingAnchor.constraint(equalTo: banner.trailingAnchor, constant: -12),
+            ctaButton.centerYAnchor.constraint(equalTo: banner.centerYAnchor),
 
-            adbButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 10),
-            adbButton.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            adbButton.trailingAnchor.constraint(
-                lessThanOrEqualTo: content.trailingAnchor, constant: -24),
-
-            footerLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            footerLabel.centerYAnchor.constraint(equalTo: buildButton.centerYAnchor),
-
-            recentButton.centerYAnchor.constraint(equalTo: buildButton.centerYAnchor),
-            recentButton.trailingAnchor.constraint(
-                equalTo: browseButton.leadingAnchor, constant: -8),
-            recentButton.widthAnchor.constraint(equalToConstant: 20),
-            recentButton.heightAnchor.constraint(equalToConstant: 20),
-
-            browseButton.centerYAnchor.constraint(equalTo: buildButton.centerYAnchor),
-            browseButton.trailingAnchor.constraint(
-                equalTo: buildButton.leadingAnchor, constant: -12),
-            buildButton.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
-            buildButton.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -24),
-            buildButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            // Quick actions
+            quickActionsLabel.topAnchor.constraint(equalTo: banner.bottomAnchor, constant: 20),
+            quickActionsLabel.leadingAnchor.constraint(
+                equalTo: content.leadingAnchor, constant: 24),
+            tileStack.topAnchor.constraint(equalTo: quickActionsLabel.bottomAnchor, constant: 10),
+            tileStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
+            tileStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            tileStack.heightAnchor.constraint(equalToConstant: 84),
+            tileStack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -22),
         ])
     }
 
@@ -334,98 +281,213 @@ final class MainWindowController: NSObject {
 
     private func setBusy(_ isBusy: Bool) {
         isBuilding = isBusy
-        card.acceptsDrops = !isBusy
-        card.alphaValue = isBusy ? 0.6 : 1
-        browseButton.isEnabled = !isBusy
-        recentButton.isEnabled = !isBusy
-        adbButton.isEnabled = !isBusy && !isInstalling
-        buildButton.isEnabled = !isBusy && canBuild
-        spinner.isHidden = !isBusy
-        statusIcon.isHidden = isBusy
-        if isBusy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+        updateControlsForActivity()
     }
 
-    /// Building is allowed once every selected certificate has finished
-    /// validating and none of them failed.
     private var canBuild: Bool {
-        !entries.isEmpty
-            && entries.allSatisfy {
-                if case .valid = $0.state { return true }
-                return false
-            }
+        if case .valid = entry?.state { return true }
+        return false
     }
 
-    private func refreshAggregateStatus() {
-        guard !isBuilding else { return }
-        guard !entries.isEmpty else {
-            setStatus("เลือกไฟล์ใบรับรองเพื่อเริ่ม", kind: .idle)
-            buildButton.isEnabled = false
+    private var hasRecentFiles: Bool {
+        !(UserDefaults.standard.stringArray(forKey: Self.recentDefaultsKey) ?? []).isEmpty
+    }
+
+    private func updateControlsForActivity() {
+        let active = isActive
+        dropZone.acceptsDrops = !active
+        dropZone.alphaValue = active ? 0.55 : 1
+        certificateRow.setControlsEnabled(!active)
+        chooseTile.isEnabled = !active
+        recentTile.isEnabled = !active && hasRecentFiles
+        zipTile.isEnabled = !active && canBuild
+        adbTile.isEnabled = !active && canBuild && !pendingInstallDevices.isEmpty
+        spinner.isHidden = !active
+        statusIcon.isHidden = active
+        if active { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+        refreshStatusPill()
+        updateCTA()
+    }
+
+    /// Contextual quick action on the banner: installing over ADB whenever a
+    /// device is connected, otherwise creating the ZIP, otherwise choosing a file.
+    private func updateCTA() {
+        guard !isActive else {
+            ctaButton.isHidden = true
             return
         }
-        if entries.contains(where: {
-            if case .validating = $0.state { return true }
-            return false
+        ctaButton.isHidden = false
+        ctaButton.target = self
+        ctaButton.keyEquivalent = "\r"
+        if canBuild, !pendingInstallDevices.isEmpty {
+            ctaButton.title =
+                pendingInstallDevices.count == 1
+                ? "Install via ADB"
+                : "Install via ADB (\(pendingInstallDevices.count))"
+            ctaButton.action = #selector(installViaADB)
+        } else if canBuild {
+            ctaButton.title = "Create ZIP"
+            ctaButton.action = #selector(makeZip)
+        } else {
+            ctaButton.title = "Choose File"
+            ctaButton.action = #selector(pick)
         }
-        ) {
-            setStatus("กำลังตรวจสอบ certificate…", kind: .idle)
-            buildButton.isEnabled = false
+        ctaButton.invalidateIntrinsicContentSize()
+    }
+
+    private func refreshStatusPill() {
+        if isActive {
+            statusPill.configure(text: "Working…", tint: Theme.accent)
+        } else if !adbChecked {
+            statusPill.configure(text: "Checking…", tint: .secondaryLabelColor)
+        } else if !adbFound {
+            statusPill.configure(text: "No ADB", tint: .secondaryLabelColor)
+        } else if pendingInstallDevices.isEmpty {
+            statusPill.configure(text: "No Device", tint: .secondaryLabelColor)
+        } else {
+            let count = pendingInstallDevices.count
+            statusPill.configure(
+                text: count == 1 ? "1 Device" : "\(count) Devices", tint: .systemGreen)
+        }
+    }
+
+    private func refreshCertificateMetrics() {
+        guard let entry else {
+            caMetric.configure(
+                symbol: "doc.badge.questionmark", tint: .secondaryLabelColor,
+                value: "Waiting", caption: "No certificate selected")
+            expiryMetric.configure(
+                symbol: "calendar", tint: .secondaryLabelColor,
+                value: "—", caption: "Not inspected yet")
+            hashMetric.configure(
+                symbol: "number", tint: .secondaryLabelColor,
+                value: "—", caption: "subject_hash_old")
             return
         }
-        let invalidCount = entries.filter {
-            if case .invalid = $0.state { return true }
-            return false
-        }.count
-        if invalidCount > 0 {
-            let suffix = entries.count == 1 ? "" : " (\(invalidCount)/\(entries.count) ไฟล์)"
-            setStatus("มีไฟล์ที่ตรวจไม่ผ่าน\(suffix) กรุณานำออกก่อนสร้าง ZIP", kind: .error)
-            buildButton.isEnabled = false
+        switch entry.state {
+        case .validating:
+            caMetric.configure(
+                symbol: "hourglass", tint: Theme.accent,
+                value: "Pending", caption: "Inspecting certificate…")
+            expiryMetric.configure(
+                symbol: "calendar", tint: .secondaryLabelColor,
+                value: "—", caption: "Inspecting…")
+            hashMetric.configure(
+                symbol: "number", tint: .secondaryLabelColor,
+                value: "—", caption: "Inspecting…")
+        case .valid(let preview):
+            caMetric.configure(
+                symbol: "checkmark.seal.fill", tint: .systemGreen,
+                value: "CA:TRUE", caption: preview.subject)
+            expiryMetric.configure(
+                symbol: "calendar",
+                tint: preview.expired ? .systemOrange : Theme.accent,
+                value: preview.notAfter,
+                caption: preview.expired ? "Certificate has expired" : "Still valid")
+            hashMetric.configure(
+                symbol: "number", tint: Theme.accent,
+                value: preview.hash, caption: "cacerts/\(preview.hash).0")
+        case .invalid(let message):
+            caMetric.configure(
+                symbol: "xmark.octagon.fill", tint: .systemRed,
+                value: "Invalid", caption: message)
+            expiryMetric.configure(
+                symbol: "calendar", tint: .secondaryLabelColor,
+                value: "—", caption: "Not available")
+            hashMetric.configure(
+                symbol: "number", tint: .secondaryLabelColor,
+                value: "—", caption: "Not available")
+        }
+    }
+
+    private func applyADBState() {
+        adbChecked = true
+        if !adbFound {
+            adbMetric.configure(
+                symbol: "cable.connector", tint: .secondaryLabelColor,
+                value: "No adb", caption: "Install Platform Tools")
+        } else if pendingInstallDevices.isEmpty {
+            adbMetric.configure(
+                symbol: "cable.connector", tint: .secondaryLabelColor,
+                value: "None", caption: "Connect a device over USB")
+        } else {
+            adbMetric.configure(
+                symbol: "cable.connector", tint: .systemGreen,
+                value: pendingInstallDevices.count == 1
+                    ? pendingInstallDevices[0].serial
+                    : "\(pendingInstallDevices.count) devices",
+                caption: "Ready to install")
+        }
+        updateControlsForActivity()
+    }
+
+    private func refreshStatus() {
+        guard !isActive else { return }
+        refreshCertificateMetrics()
+        guard let entry else {
+            setStatus("Select a certificate file to begin", kind: .idle)
+            updateControlsForActivity()
             return
         }
-        let text =
-            entries.count == 1
-            ? "พร้อมตรวจ CA:TRUE และสร้าง ZIP"
-            : "พร้อมสร้าง ZIP รวม \(entries.count) certificate"
-        setStatus(text, kind: .ready)
-        buildButton.isEnabled = true
+        switch entry.state {
+        case .validating:
+            setStatus("Inspecting certificate…", kind: .idle)
+        case .invalid:
+            setStatus("Certificate validation failed. Choose another file.", kind: .error)
+        case .valid:
+            setStatus("Ready to create Magisk ZIP or install via ADB", kind: .ready)
+            checkForADBDevice()
+        }
+        updateControlsForActivity()
     }
 
     // MARK: Selection
 
-    func addCertificates(_ urls: [URL]) {
-        guard !isBuilding else { return }
-        let existingPaths = Set(entries.map(\.url.path))
-        var added = false
-        for url in urls {
-            var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-                !isDirectory.boolValue, !existingPaths.contains(url.path)
-            else { continue }
-            appendEntry(for: url)
-            added = true
-        }
-        guard added else { return }
-        placeholderStack.isHidden = true
-        rowsScrollView.isHidden = false
-        clearButton.isHidden = false
-        refreshAggregateStatus()
-    }
+    func selectCertificate(_ url: URL) {
+        guard !isActive else { return }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+            !isDirectory.boolValue
+        else { return }
 
-    private func appendEntry(for url: URL) {
-        let row = CertificateRowView()
-        row.configure(
-            icon: NSWorkspace.shared.icon(forFile: url.path),
+        entry = CertificateEntry(url: url, state: .validating)
+        dropZone.isHidden = true
+        certificateRow.isHidden = false
+        certificateRow.configure(
             name: url.lastPathComponent,
-            detail: "กำลังตรวจสอบ…",
-            detailColor: .secondaryLabelColor)
-        row.onRemove = { [weak self] in self?.removeCertificate(at: url) }
-        row.translatesAutoresizingMaskIntoConstraints = false
-        rowsStack.addArrangedSubview(row)
-        row.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
-        entries.append(CertificateEntry(url: url, state: .validating, row: row))
+            meta: fileMetaBadge(for: url),
+            subject: "Inspecting certificate…",
+            subjectColor: .secondaryLabelColor,
+            pathSummary: abbreviatedPath(for: url),
+            badge: .neutral("Inspecting…"))
+        refreshStatus()
         inspect(url)
     }
 
+    private func fileMetaBadge(for url: URL) -> String {
+        let ext = url.pathExtension.uppercased()
+        let sizeText: String
+        if let bytes = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64
+        {
+            sizeText = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        } else {
+            sizeText = ""
+        }
+        switch (ext.isEmpty, sizeText.isEmpty) {
+        case (false, false): return "\(ext) · \(sizeText)"
+        case (false, true): return ext
+        case (true, false): return sizeText
+        case (true, true): return ""
+        }
+    }
+
+    private func abbreviatedPath(for url: URL) -> String {
+        (url.path as NSString).abbreviatingWithTildeInPath
+    }
+
     private func inspect(_ url: URL) {
+        inspectionGeneration += 1
+        let generation = inspectionGeneration
         let builder = ModuleBuilder(resourcesURL: Bundle.main.resourceURL)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let outcome: CertificateEntry.State
@@ -435,150 +497,134 @@ final class MainWindowController: NSObject {
                 outcome = .invalid(error.localizedDescription)
             }
             DispatchQueue.main.async {
-                self?.applyInspection(outcome, to: url)
+                self?.applyInspection(outcome, to: url, generation: generation)
             }
         }
     }
 
-    private func applyInspection(_ state: CertificateEntry.State, to url: URL) {
-        guard let index = entries.firstIndex(where: { $0.url == url }) else { return }
-        entries[index].state = state
-        let row = entries[index].row
+    private func applyInspection(_ state: CertificateEntry.State, to url: URL, generation: Int) {
+        guard inspectionGeneration == generation, entry?.url == url else { return }
+        entry?.state = state
+        let meta = fileMetaBadge(for: url)
+        let path = abbreviatedPath(for: url)
         switch state {
         case .validating:
-            row.configure(
-                icon: NSWorkspace.shared.icon(forFile: url.path), name: url.lastPathComponent,
-                detail: "กำลังตรวจสอบ…", detailColor: .secondaryLabelColor)
+            certificateRow.configure(
+                name: url.lastPathComponent, meta: meta,
+                subject: "Inspecting certificate…", subjectColor: .secondaryLabelColor,
+                pathSummary: path, badge: .neutral("Inspecting…"))
         case .valid(let preview):
-            let expiry = preview.expired ? "หมดอายุแล้ว" : "หมดอายุ \(preview.notAfter)"
-            row.configure(
-                icon: NSWorkspace.shared.icon(forFile: url.path), name: url.lastPathComponent,
-                detail: "\(preview.subject) · \(expiry)",
-                detailColor: preview.expired ? .systemOrange : .secondaryLabelColor)
+            let target = preview.hash.isEmpty ? path : "\(path)  →  \(preview.hash).0"
+            certificateRow.configure(
+                name: url.lastPathComponent, meta: meta,
+                subject: preview.subject,
+                subjectColor: .secondaryLabelColor,
+                pathSummary: target,
+                badge: preview.expired ? .warning("Expired") : .valid("CA:TRUE"))
         case .invalid(let message):
-            row.configure(
-                icon: NSWorkspace.shared.icon(forFile: url.path), name: url.lastPathComponent,
-                detail: message, detailColor: .systemRed)
+            certificateRow.configure(
+                name: url.lastPathComponent, meta: meta,
+                subject: message, subjectColor: .systemRed,
+                pathSummary: path, badge: .error("Invalid"))
         }
-        refreshAggregateStatus()
+        refreshStatus()
     }
 
-    private func removeCertificate(at url: URL) {
-        guard !isBuilding, let index = entries.firstIndex(where: { $0.url == url }) else { return }
-        entries[index].row.removeFromSuperview()
-        entries.remove(at: index)
-        if entries.isEmpty {
-            placeholderStack.isHidden = false
-            rowsScrollView.isHidden = true
-            clearButton.isHidden = true
-        }
-        refreshAggregateStatus()
-    }
-
-    @objc func clearAll() {
-        guard !isBuilding else { return }
-        for entry in entries { entry.row.removeFromSuperview() }
-        entries.removeAll()
-        placeholderStack.isHidden = false
-        rowsScrollView.isHidden = true
-        clearButton.isHidden = true
-        refreshAggregateStatus()
+    @objc func clearSelection() {
+        guard !isActive else { return }
+        inspectionGeneration += 1
+        entry = nil
+        dropZone.isHidden = false
+        certificateRow.isHidden = true
+        refreshStatus()
     }
 
     @objc func pick() {
-        guard !isBuilding else { return }
+        guard !isActive else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.title = "เลือกไฟล์ใบรับรอง"
-        panel.prompt = "เลือก"
-        panel.message = "เลือก Burp CA certificate แบบ DER หรือ PEM (เลือกได้หลายไฟล์)"
-        if panel.runModal() == .OK { addCertificates(panel.urls) }
+        panel.allowsMultipleSelection = false
+        panel.title = "Choose Certificate"
+        panel.prompt = "Choose"
+        panel.message = "Select a Burp CA certificate in DER or PEM format"
+        if panel.runModal() == .OK, let url = panel.url { selectCertificate(url) }
     }
 
     @objc func makeZip() {
-        guard canBuild, !isBuilding else { return }
-        let certificates = entries.map(\.url)
+        guard canBuild, !isActive, let certificate = entry?.url else { return }
         let panel = NSSavePanel()
-        panel.title = "บันทึก Magisk ZIP"
-        panel.prompt = "บันทึก"
+        panel.title = "Save Magisk ZIP"
+        panel.prompt = "Save"
         panel.nameFieldStringValue = "BurpCA-Magisk.zip"
         panel.allowedContentTypes = [.zip]
         guard panel.runModal() == .OK, let destination = panel.url else { return }
-        hideADBButton()
         setBusy(true)
-        setStatus("กำลังตรวจ certificate และสร้าง ZIP…", kind: .ready)
+        setStatus("Validating certificate and building ZIP…", kind: .ready)
         let builder = ModuleBuilder(resourcesURL: Bundle.main.resourceURL)
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let errorMessage: String?
             do {
-                try builder.build(certificates: certificates, destination: destination)
+                try builder.build(certificate: certificate, destination: destination)
                 errorMessage = nil
             } catch {
                 errorMessage = error.localizedDescription
             }
             let message = errorMessage
             DispatchQueue.main.async {
+                guard let self else { return }
                 self.setBusy(false)
                 if let message = message {
-                    self.setStatus("สร้างไม่สำเร็จ", kind: .error)
+                    self.setStatus("Build failed", kind: .error)
                     let alert = NSAlert()
-                    alert.messageText = "สร้าง Magisk ZIP ไม่สำเร็จ"
+                    alert.messageText = "Failed to Create Magisk ZIP"
                     alert.informativeText = message
                     alert.alertStyle = .warning
                     alert.runModal()
                 } else {
                     self.setSuccessStatus(
-                        "สร้างสำเร็จ: \(destination.lastPathComponent)\nนำไปติดตั้งใน Magisk แล้ว reboot ด้วยตัวเอง"
+                        "Created \(destination.lastPathComponent)\nInstall it in Magisk and reboot your device"
                     )
-                    self.rememberRecent(certificates)
+                    self.rememberRecent(certificate)
                     NSWorkspace.shared.activateFileViewerSelecting([destination])
-                    self.checkForADBDevice(destination)
                 }
+                if self.canBuild { self.checkForADBDevice() }
             }
         }
     }
 
     // MARK: ADB install (opt-in; nothing here runs without an explicit click)
 
-    /// Only reads `adb devices`; performs no action on the phone. Shows the
-    /// install button when a device is detected for the ZIP just built.
-    private func checkForADBDevice(_ destination: URL) {
+    /// Only reads `adb devices`; performs no action on the phone. Keeps the
+    /// header pill, ADB metric card, and quick actions in sync with reality.
+    private func checkForADBDevice() {
+        adbCheckGeneration += 1
+        let generation = adbCheckGeneration
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let adb = ADBInstaller.locateADB() else {
-                DispatchQueue.main.async { self?.hideADBButton() }
+                DispatchQueue.main.async {
+                    guard let self, self.adbCheckGeneration == generation else { return }
+                    self.adbFound = false
+                    self.pendingInstallDevices = []
+                    self.applyADBState()
+                }
                 return
             }
             let devices = ADBInstaller.connectedDevices(adb: adb)
-            DispatchQueue.main.async { self?.updateADBButton(devices: devices, zip: destination) }
+            DispatchQueue.main.async {
+                guard let self, self.adbCheckGeneration == generation, !self.isActive
+                else { return }
+                self.adbFound = true
+                self.pendingInstallDevices = devices
+                self.applyADBState()
+            }
         }
-    }
-
-    private func hideADBButton() {
-        pendingInstallZIP = nil
-        pendingInstallDevices = []
-        adbButton.isHidden = true
-    }
-
-    private func updateADBButton(devices: [ADBInstaller.Device], zip: URL) {
-        guard !devices.isEmpty else {
-            hideADBButton()
-            return
-        }
-        pendingInstallZIP = zip
-        pendingInstallDevices = devices
-        adbButton.title =
-            devices.count == 1
-            ? "ติดตั้งผ่าน ADB ไปที่ \(devices[0].serial)…"
-            : "ติดตั้งผ่าน ADB (\(devices.count) เครื่อง)…"
-        adbButton.isHidden = false
     }
 
     @objc private func installViaADB() {
-        guard !isBuilding, !isInstalling, let zip = pendingInstallZIP else { return }
+        guard canBuild, !isActive else { return }
         guard pendingInstallDevices.count > 1 else {
             if let device = pendingInstallDevices.first {
-                performADBInstall(zip: zip, device: device)
+                performADBInstall(device: device)
             }
             return
         }
@@ -590,53 +636,68 @@ final class MainWindowController: NSObject {
             item.representedObject = device.serial
             menu.addItem(item)
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: adbButton.bounds.height), in: adbButton)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: ctaButton.bounds.height), in: ctaButton)
     }
 
     @objc private func selectADBDevice(_ sender: NSMenuItem) {
-        guard let serial = sender.representedObject as? String, let zip = pendingInstallZIP,
+        guard let serial = sender.representedObject as? String,
             let device = pendingInstallDevices.first(where: { $0.serial == serial })
         else { return }
-        performADBInstall(zip: zip, device: device)
+        performADBInstall(device: device)
     }
 
-    private func performADBInstall(zip: URL, device: ADBInstaller.Device) {
+    private func performADBInstall(device: ADBInstaller.Device) {
+        guard canBuild, !isActive, let certificate = entry?.url else { return }
+        let builder = ModuleBuilder(resourcesURL: Bundle.main.resourceURL)
         isInstalling = true
-        adbButton.isEnabled = false
-        setStatus("กำลังติดตั้งผ่าน ADB ไปที่ \(device.serial)…", kind: .ready)
+        updateControlsForActivity()
+        setStatus("Building and installing via ADB to \(device.serial)…", kind: .ready)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let errorMessage: String?
             do {
-                try ADBInstaller().install(zip: zip, onto: device)
+                let temporary = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(
+                        "Burp2Magisk-adb-zip-\(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(
+                    at: temporary, withIntermediateDirectories: false)
+                defer { try? FileManager.default.removeItem(at: temporary) }
+                let zipURL = temporary.appendingPathComponent("BurpCA-Magisk.zip")
+                try builder.build(certificate: certificate, destination: zipURL)
+                try ADBInstaller().install(zip: zipURL, onto: device)
                 errorMessage = nil
             } catch {
                 errorMessage = error.localizedDescription
             }
             DispatchQueue.main.async {
-                self?.finishADBInstall(error: errorMessage, device: device)
+                self?.finishADBInstall(
+                    error: errorMessage, device: device, certificate: certificate)
             }
         }
     }
 
-    private func finishADBInstall(error: String?, device: ADBInstaller.Device) {
+    private func finishADBInstall(
+        error: String?, device: ADBInstaller.Device, certificate: URL
+    ) {
         isInstalling = false
-        adbButton.isEnabled = true
+        updateControlsForActivity()
         if let error {
-            setStatus("ติดตั้งผ่าน ADB ไม่สำเร็จ", kind: .error)
+            setStatus("ADB installation failed", kind: .error)
             let alert = NSAlert()
-            alert.messageText = "ติดตั้งผ่าน ADB ไม่สำเร็จ"
+            alert.messageText = "ADB Installation Failed"
             alert.informativeText = error
             alert.alertStyle = .warning
             alert.runModal()
             return
         }
-        setSuccessStatus("ติดตั้งลงอุปกรณ์ \(device.serial) สำเร็จ")
+        rememberRecent(certificate)
+        setSuccessStatus("Installed on \(device.serial)")
         let alert = NSAlert()
-        alert.messageText = "ติดตั้งโมดูลสำเร็จ"
-        alert.informativeText = "โมดูลติดตั้งแล้วบน \(device.serial) ต้อง reboot อุปกรณ์เพื่อให้มีผล"
+        alert.messageText = "Module Installed"
+        alert.informativeText =
+            "The module has been installed on \(device.serial). Reboot the device to apply changes."
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Reboot ตอนนี้")
-        alert.addButton(withTitle: "ปิด")
+        alert.addButton(withTitle: "Reboot Now")
+        alert.addButton(withTitle: "Close")
         if alert.runModal() == .alertFirstButtonReturn {
             rebootDevice(device)
         }
@@ -654,7 +715,7 @@ final class MainWindowController: NSObject {
             guard let message = errorMessage else { return }
             DispatchQueue.main.async {
                 let alert = NSAlert()
-                alert.messageText = "สั่ง Reboot ไม่สำเร็จ"
+                alert.messageText = "Reboot Failed"
                 alert.informativeText = message
                 alert.alertStyle = .warning
                 alert.runModal()
@@ -664,20 +725,13 @@ final class MainWindowController: NSObject {
 
     // MARK: Recent files
 
-    private func rememberRecent(_ urls: [URL]) {
+    private func rememberRecent(_ url: URL) {
         var recent = UserDefaults.standard.stringArray(forKey: Self.recentDefaultsKey) ?? []
-        for url in urls {
-            recent.removeAll { $0 == url.path }
-            recent.insert(url.path, at: 0)
-        }
+        recent.removeAll { $0 == url.path }
+        recent.insert(url.path, at: 0)
         if recent.count > Self.recentLimit { recent.removeLast(recent.count - Self.recentLimit) }
         UserDefaults.standard.set(recent, forKey: Self.recentDefaultsKey)
-        refreshRecentButton()
-    }
-
-    private func refreshRecentButton() {
-        let paths = UserDefaults.standard.stringArray(forKey: Self.recentDefaultsKey) ?? []
-        recentButton.isHidden = paths.isEmpty
+        updateControlsForActivity()
     }
 
     @objc private func showRecentMenu() {
@@ -696,12 +750,23 @@ final class MainWindowController: NSObject {
             menu.addItem(item)
         }
         menu.popUp(
-            positioning: nil, at: NSPoint(x: 0, y: recentButton.bounds.height),
-            in: recentButton)
+            positioning: nil, at: NSPoint(x: 0, y: recentTile.bounds.height), in: recentTile)
     }
 
     @objc private func selectRecent(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
-        addCertificates([url])
+        selectCertificate(url)
+    }
+}
+
+// MARK: - WindowBackdropView
+
+/// Fills the window with the theme canvas color; redrawn on appearance changes.
+private final class WindowBackdropView: NSView {
+    override var isOpaque: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        Theme.windowBackground.setFill()
+        bounds.fill()
     }
 }

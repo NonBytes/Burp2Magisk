@@ -17,9 +17,9 @@ struct ADBInstaller {
         var errorDescription: String? {
             switch self {
             case .adbNotFound:
-                return "ไม่พบ adb กรุณาติดตั้ง Android SDK Platform Tools และตั้งค่า PATH"
+                return "adb not found. Install Android SDK Platform Tools and add adb to PATH."
             case .commandFailed(let detail):
-                return detail.isEmpty ? "ติดตั้งผ่าน ADB ไม่สำเร็จ" : detail
+                return detail.isEmpty ? "ADB installation failed." : detail
             }
         }
     }
@@ -66,10 +66,13 @@ struct ADBInstaller {
 
     /// Exposed separately so the parser can be tested without a real adb or device.
     static func parseDevices(_ output: String) -> [Device] {
-        output.split(separator: "\n").dropFirst().compactMap { line in
+        output.split(whereSeparator: \.isNewline).compactMap { line in
             let parts = line.split(separator: "\t")
-            guard parts.count == 2, parts[1] == "device" else { return nil }
-            return Device(serial: String(parts[0]))
+            guard parts.count == 2 else { return nil }
+            let serial = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let state = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !serial.isEmpty, state == "device" else { return nil }
+            return Device(serial: serial)
         }
     }
 

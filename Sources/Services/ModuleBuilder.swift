@@ -7,17 +7,15 @@ struct ModuleBuilder {
 
     enum BuildError: LocalizedError {
         case missingResources
-        case noCertificates
         case packagingFailed(String)
 
         var errorDescription: String? {
             switch self {
             case .missingResources:
-                return "ไม่พบไฟล์สำหรับสร้าง module ภายในแอป กรุณา build หรือติดตั้งแอปใหม่"
-            case .noCertificates:
-                return "กรุณาเลือก certificate อย่างน้อยหนึ่งไฟล์"
+                return
+                    "Module build resources are missing from the app bundle. Rebuild or reinstall the app."
             case .packagingFailed(let detail):
-                return detail.isEmpty ? "สร้าง Magisk ZIP ไม่สำเร็จ" : detail
+                return detail.isEmpty ? "Failed to create Magisk ZIP." : detail
             }
         }
     }
@@ -29,9 +27,10 @@ struct ModuleBuilder {
         var errorDescription: String? {
             switch self {
             case .missingResources:
-                return "ไม่พบไฟล์สำหรับตรวจ certificate ภายในแอป กรุณา build หรือติดตั้งแอปใหม่"
+                return
+                    "Certificate inspection resources are missing from the app bundle. Rebuild or reinstall the app."
             case .invalid(let detail):
-                return detail.isEmpty ? "ไม่สามารถตรวจสอบ certificate นี้ได้" : detail
+                return detail.isEmpty ? "Unable to inspect this certificate." : detail
             }
         }
     }
@@ -43,8 +42,7 @@ struct ModuleBuilder {
         let expired: Bool
     }
 
-    func build(certificates: [URL], destination: URL) throws {
-        guard !certificates.isEmpty else { throw BuildError.noCertificates }
+    func build(certificate: URL, destination: URL) throws {
         guard let resourcesURL,
             FileManager.default.isReadableFile(
                 atPath: resourcesURL.appendingPathComponent("der-to-magisk.sh").path
@@ -65,9 +63,11 @@ struct ModuleBuilder {
         let output = temporary.appendingPathComponent("result", isDirectory: true)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments =
-            [resourcesURL.appendingPathComponent("der-to-magisk.sh").path, output.path]
-            + certificates.map(\.path)
+        process.arguments = [
+            resourcesURL.appendingPathComponent("der-to-magisk.sh").path,
+            output.path,
+            certificate.path,
+        ]
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
         process.environment = environment
@@ -142,9 +142,9 @@ struct ModuleBuilder {
             fields[String(line[..<separator])] = String(line[line.index(after: separator)...])
         }
         return CertificatePreview(
-            subject: fields["SUBJECT"] ?? "",
-            notAfter: fields["NOT_AFTER"] ?? "",
-            hash: fields["HASH"] ?? "",
+            subject: (fields["SUBJECT"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            notAfter: (fields["NOT_AFTER"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            hash: (fields["HASH"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
             expired: fields["EXPIRED"] == "yes")
     }
 

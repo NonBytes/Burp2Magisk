@@ -1,17 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
-- Select or drag multiple certificates at once and bundle them into a single Magisk ZIP.
-- Preview each certificate's subject, expiry and subject hash before building; reject a
-  batch cleanly if any certificate fails validation, without touching the destination.
-- Remember recently used certificates and offer them from a menu next to the file picker.
-- Removed the GitHub Actions CI workflow; run `scripts/test.sh` and `build.sh` locally instead.
-- Add an opt-in one-click install to a connected Android device: after a successful build,
-  detecting an authorized `adb` device shows an "ติดตั้งผ่าน ADB…" button that pushes the ZIP
-  and runs Magisk's own `--install-module`. This changes the project's earlier policy of never
-  connecting to Android; the app still never reboots the device without a separate explicit
-  confirmation, and the detection step itself performs no action on the phone.
+- Redesign the macOS interface into a modern single-window dashboard with a light/dark indigo-lavender theme, live metric cards (`CA Status`, `Expiration`, `Subject Hash`, `ADB Device`), contextual status banner, and pastel Quick Actions tiles.
+- Switch all UI copy, dialogs, tooltips, and validation errors to English.
+- Focus on a streamlined single-certificate workflow with live subject, expiration, format/size, and Android hash (`<subject_hash_old>.0`) preview.
+- Allow one-click **Install via ADB** directly after selecting a valid certificate (automatically builds into a temporary ZIP, pushes via `adb`, runs `magisk --install-module`, and cleans up). Re-checks connected devices when returning to the app window; reboot remains an explicit opt-in confirmation.
+- Remember recently used certificates in the **Recent** menu.
+- Prevent quitting mid-build or mid-ADB install, harden `adb devices` parsing and relative-path handling, and bundle only explicit `ModuleTemplate` files during builds.
+- Removed the GitHub Actions CI workflow; run `./scripts/test.sh` and `./build.sh` locally instead.
 
 ## 1.0.1
 

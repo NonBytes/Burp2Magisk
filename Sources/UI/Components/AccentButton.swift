@@ -2,24 +2,26 @@ import Cocoa
 
 // MARK: - AccentButton
 
-/// Filled rounded button used for the primary action. Draws its own
-/// background so it reads as the prominent action in every appearance.
+/// Filled rounded pill button used for the contextual banner action. Draws
+/// its own background so it reads as the prominent action in every appearance.
 final class AccentButton: NSButton {
+    private let preferredHeight: CGFloat
     private var trackingArea: NSTrackingArea?
     private var isHovered = false
 
-    init(title: String) {
+    init(title: String, height: CGFloat = 30, fontSize: CGFloat = 13) {
+        self.preferredHeight = height
         super.init(frame: .zero)
         isBordered = false
         self.title = title
-        font = .systemFont(ofSize: 13, weight: .medium)
+        font = .systemFont(ofSize: fontSize, weight: .medium)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var intrinsicContentSize: NSSize {
-        let size = (title as NSString).size(withAttributes: [.font: font ?? .systemFont(ofSize: 13)]
-        )
-        return NSSize(width: ceil(size.width) + 30, height: 32)
+        let size = (title as NSString).size(
+            withAttributes: [.font: font ?? .systemFont(ofSize: 13)])
+        return NSSize(width: ceil(size.width) + 28, height: preferredHeight)
     }
 
     override var isHighlighted: Bool { didSet { needsDisplay = true } }
@@ -46,7 +48,7 @@ final class AccentButton: NSButton {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
     override func draw(_ dirtyRect: NSRect) {
-        let cornerRadius: CGFloat = 8
+        let cornerRadius: CGFloat = 9
         let path = NSBezierPath(
             roundedRect: NSRect(x: 0.5, y: 0.5, width: bounds.width - 1, height: bounds.height - 1),
             xRadius: cornerRadius, yRadius: cornerRadius)

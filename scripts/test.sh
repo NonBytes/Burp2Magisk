@@ -4,7 +4,7 @@ cd -- "$(dirname -- "$0")/.."
 mkdir -p work/module-cache
 fixture=$(mktemp -d "$PWD/work/integration.XXXXXXXX")
 trap 'rm -rf -- "$fixture"' EXIT
-for kind in ca ca2 leaf; do
+for kind in ca leaf; do
   constraint=TRUE
   [[ $kind = leaf ]] && constraint=FALSE
   /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes \

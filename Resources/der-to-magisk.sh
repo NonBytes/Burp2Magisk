@@ -2,13 +2,13 @@
 set -euo pipefail
 export LC_ALL=C
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-(($# >= 2)) || {
-  echo 'Expected an output directory and at least one certificate' >&2
+(($# == 2)) || {
+  echo 'Expected an output directory and one certificate' >&2
   exit 1
 }
 base=$(cd -- "$(dirname -- "$0")" && pwd)
 out=$1
-shift
+input=$2
 [[ ! -e "$out" && ! -L "$out" ]] || { echo 'Output already exists' >&2; exit 1; }
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/b2m.XXXXXXXX")
 trap 'rm -rf -- "$tmp"' EXIT
@@ -19,32 +19,14 @@ module="$tmp/module"
 mkdir "$module"
 mkdir -p "$module/system/etc/security/cacerts"
 
-hashes=()
-index=0
-for input in "$@"; do
-  index=$((index + 1))
-  /bin/bash "$base/burp-ca-to-android.sh" -o "$tmp/converted-$index" -- "$input"
-  certs=("$tmp/converted-$index/"*.0)
-  [[ ${#certs[@]} = 1 && -f ${certs[0]} ]]
-  name=${certs[0]##*/}
-  hash=${name%.0}
-  dest="$module/system/etc/security/cacerts/$name"
-  if [[ -e "$dest" ]]; then
-    cmp -s "${certs[0]}" "$dest" \
-      || { echo "Two different certificates hash to the same name: $hash" >&2; exit 1; }
-    continue
-  fi
-  cp "${certs[0]}" "$dest"
-  hashes+=("$hash")
-done
-(( ${#hashes[@]} >= 1 )) || { echo 'No certificates were produced' >&2; exit 1; }
+/bin/bash "$base/burp-ca-to-android.sh" -o "$tmp/converted" -- "$input"
+certs=("$tmp/converted/"*.0)
+[[ ${#certs[@]} = 1 && -f ${certs[0]} ]]
+name=${certs[0]##*/}
+hash=${name%.0}
+cp "${certs[0]}" "$module/system/etc/security/cacerts/$name"
 
-# A deterministic module id derived from the sorted set of hashes lets Magisk
-# upgrade the same module in place when the same certificate set is rebuilt,
-# while a different set of certificates gets its own module id.
-sorted_hashes=$(printf '%s\n' "${hashes[@]}" | sort)
-module_id=burp_ca_$(printf '%s' "$sorted_hashes" | /usr/bin/shasum -a 256 | cut -c1-8)
-count=${#hashes[@]}
+module_id="burp_ca_$hash"
 
 for name in post-fs-data.sh mount-ca.sh; do
   cp "$base/ModuleTemplate/$name" "$module/$name"
@@ -52,11 +34,11 @@ done
 cp "$base/ModuleTemplate/LICENSE" "$module/LICENSE"
 cat > "$module/module.prop" <<PROP
 id=$module_id
-name=Burp CA ($count certs)
+name=Burp CA ($hash)
 version=1.0
 versionCode=1
 author=Burp2Magisk
-description=Burp2Magisk custom CA module for Android system and Conscrypt trust stores ($count certificate(s)).
+description=Burp2Magisk custom CA module for Android system and Conscrypt trust stores.
 PROP
 cat > "$module/customize.sh" <<'CUSTOMIZE'
 ui_print "Installing supplied CA certificate(s)"

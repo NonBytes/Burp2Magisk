@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        windowController.isBuilding ? .terminateCancel : .terminateNow
+        (windowController.isBuilding || windowController.isInstalling)
+            ? .terminateCancel : .terminateNow
     }
 }
