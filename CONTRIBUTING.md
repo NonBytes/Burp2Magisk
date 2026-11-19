@@ -2,7 +2,7 @@
 
 Requires macOS 12+ and Xcode Command Line Tools. No package manager or external
 dependencies are needed. Open `Burp2Magisk.xcodeproj`, select **Burp2Magisk → My Mac**
-and run, or use `bash build.sh` for a Universal app and distribution ZIP in `dist/`.
+and run, or use `bash build.sh` for an arm64 (Apple Silicon) app and distribution ZIP in `dist/`.
 
 ## Where to change things
 
@@ -63,5 +63,5 @@ iconutil -c icns work/Burp2Magisk.iconset -o Resources/Burp2Magisk.icns
 
 Generated artwork is versioned; build outputs and local credentials are not.
 Update `CFBundleShortVersionString`, `CFBundleVersion`, and `CHANGELOG.md` for a
-new release. Rebuild, verify both architectures and code signature, then publish
+new release. Rebuild, verify the arm64 binary and code signature, then publish
 a new tag and assets. Never replace an old release ZIP with different contents.

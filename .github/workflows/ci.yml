@@ -18,15 +18,15 @@ jobs:
       - name: swift-format lint
         run: xcrun swift-format lint --strict --recursive Sources scripts Tests
 
-      - name: Universal build
+      - name: Build (arm64)
         run: bash build.sh
 
       - name: Verify codesign
         run: codesign --verify --deep --strict dist/Burp2Magisk.app
 
-      - name: Verify universal binary
+      - name: Verify arm64 binary
         run: |
-          lipo -info dist/Burp2Magisk.app/Contents/MacOS/Burp2Magisk | grep -q 'x86_64 arm64\|arm64 x86_64'
+          lipo -info dist/Burp2Magisk.app/Contents/MacOS/Burp2Magisk | grep -q 'arm64'
 
       - name: Validate Info.plist
         run: plutil -lint dist/Burp2Magisk.app/Contents/Info.plist

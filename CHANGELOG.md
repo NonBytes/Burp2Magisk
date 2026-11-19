@@ -5,7 +5,8 @@
 - Split application lifetime, window/UI components and module packaging into focused Swift files.
 - Extract a testable packaging service with disk-backed logs and bounded error details.
 - Add integration checks, shared Swift formatting and contributor documentation.
-- Update Universal and Xcode builds to compile the new source structure.
+- Update Xcode build to compile the new source structure; add a GitHub Actions CI workflow.
+- Drop Intel (x86_64) support; `build.sh` now produces an arm64-only (Apple Silicon) app.
 
 ## 1.0.0
 

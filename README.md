@@ -44,7 +44,7 @@ Sources/Services/         สร้าง module และบันทึก ZIP
 Resources/Info.plist      ข้อมูลแอป
 Resources/*.sh            ตรวจ certificate และสร้าง module
 Resources/ModuleTemplate/ installer และ boot script ที่อ่านแก้ไขได้
-build.sh                  build แอป Universal และ ZIP
+build.sh                  build แอป (arm64) และ ZIP
 Tests/                    integration tests ของตัวสร้าง ZIP
 scripts/test.sh           รันชุดทดสอบโดยไม่เปิด GUI
 ```
