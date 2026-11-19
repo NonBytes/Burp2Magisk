@@ -7,19 +7,44 @@ struct ModuleBuilder {
 
     enum BuildError: LocalizedError {
         case missingResources
+        case noCertificates
         case packagingFailed(String)
 
         var errorDescription: String? {
             switch self {
             case .missingResources:
                 return "ไม่พบไฟล์สำหรับสร้าง module ภายในแอป กรุณา build หรือติดตั้งแอปใหม่"
+            case .noCertificates:
+                return "กรุณาเลือก certificate อย่างน้อยหนึ่งไฟล์"
             case .packagingFailed(let detail):
                 return detail.isEmpty ? "สร้าง Magisk ZIP ไม่สำเร็จ" : detail
             }
         }
     }
 
-    func build(certificate: URL, destination: URL) throws {
+    enum InspectError: LocalizedError {
+        case missingResources
+        case invalid(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingResources:
+                return "ไม่พบไฟล์สำหรับตรวจ certificate ภายในแอป กรุณา build หรือติดตั้งแอปใหม่"
+            case .invalid(let detail):
+                return detail.isEmpty ? "ไม่สามารถตรวจสอบ certificate นี้ได้" : detail
+            }
+        }
+    }
+
+    struct CertificatePreview {
+        let subject: String
+        let notAfter: String
+        let hash: String
+        let expired: Bool
+    }
+
+    func build(certificates: [URL], destination: URL) throws {
+        guard !certificates.isEmpty else { throw BuildError.noCertificates }
         guard let resourcesURL,
             FileManager.default.isReadableFile(
                 atPath: resourcesURL.appendingPathComponent("der-to-magisk.sh").path
@@ -40,11 +65,9 @@ struct ModuleBuilder {
         let output = temporary.appendingPathComponent("result", isDirectory: true)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [
-            resourcesURL.appendingPathComponent("der-to-magisk.sh").path,
-            certificate.path,
-            output.path,
-        ]
+        process.arguments =
+            [resourcesURL.appendingPathComponent("der-to-magisk.sh").path, output.path]
+            + certificates.map(\.path)
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
         process.environment = environment
@@ -55,12 +78,9 @@ struct ModuleBuilder {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            let reader = try FileHandle(forReadingFrom: logURL)
-            defer { try? reader.close() }
-            let size = try reader.seekToEnd()
-            try reader.seek(toOffset: size > 16_384 ? size - 16_384 : 0)
-            let detail = String(decoding: try reader.readToEnd() ?? Data(), as: UTF8.self)
-            throw BuildError.packagingFailed(detail)
+            throw BuildError.packagingFailed(
+                try readTail(logURL, limit: 16_384).trimmingCharacters(in: .whitespacesAndNewlines)
+            )
         }
 
         // The save panel owns overwrite approval. Atomic writing keeps a previous
@@ -70,5 +90,69 @@ struct ModuleBuilder {
             options: .mappedIfSafe
         )
         try archive.write(to: destination, options: .atomic)
+    }
+
+    /// Read-only validation and summary of one certificate; writes nothing to disk.
+    func inspect(certificate: URL) throws -> CertificatePreview {
+        guard let resourcesURL,
+            FileManager.default.isReadableFile(
+                atPath: resourcesURL.appendingPathComponent("burp-ca-info.sh").path
+            )
+        else { throw InspectError.missingResources }
+
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Burp2Magisk-inspect-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+
+        let outputURL = temporary.appendingPathComponent("stdout.log")
+        let errorURL = temporary.appendingPathComponent("stderr.log")
+        try Data().write(to: outputURL)
+        try Data().write(to: errorURL)
+        let outputHandle = try FileHandle(forWritingTo: outputURL)
+        let errorHandle = try FileHandle(forWritingTo: errorURL)
+        defer {
+            try? outputHandle.close()
+            try? errorHandle.close()
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [
+            resourcesURL.appendingPathComponent("burp-ca-info.sh").path, certificate.path,
+        ]
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        process.environment = environment
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = outputHandle
+        process.standardError = errorHandle
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw InspectError.invalid(
+                try readTail(errorURL, limit: 4_096).trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+
+        var fields: [String: String] = [:]
+        for line in try readTail(outputURL, limit: 4_096).split(separator: "\n") {
+            guard let separator = line.firstIndex(of: "=") else { continue }
+            fields[String(line[..<separator])] = String(line[line.index(after: separator)...])
+        }
+        return CertificatePreview(
+            subject: fields["SUBJECT"] ?? "",
+            notAfter: fields["NOT_AFTER"] ?? "",
+            hash: fields["HASH"] ?? "",
+            expired: fields["EXPIRED"] == "yes")
+    }
+
+    private func readTail(_ url: URL, limit: UInt64) throws -> String {
+        let reader = try FileHandle(forReadingFrom: url)
+        defer { try? reader.close() }
+        let size = try reader.seekToEnd()
+        try reader.seek(toOffset: size > limit ? size - limit : 0)
+        return String(decoding: try reader.readToEnd() ?? Data(), as: UTF8.self)
     }
 }

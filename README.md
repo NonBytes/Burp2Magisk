@@ -1,6 +1,6 @@
 # Burp2Magisk สำหรับ macOS
 
-แอป Swift/AppKit สำหรับเลือกหรือลาก Burp CA certificate (.der/.pem) และบันทึก Magisk module ZIP โดยใช้ Magisk template ของ Burp2Magisk
+แอป Swift/AppKit สำหรับเลือกหรือลาก Burp CA certificate (.der/.pem) ได้หลายไฟล์พร้อมกัน ดูตัวอย่าง subject/วันหมดอายุก่อนสร้าง และบันทึก Magisk module ZIP เดียวที่รวมทุก CA โดยใช้ Magisk template ของ Burp2Magisk
 
 ![Burp2Magisk macOS](docs/images/macos-app.png)
 

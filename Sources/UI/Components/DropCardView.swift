@@ -5,7 +5,7 @@ import Cocoa
 /// The certificate card: dashed drop zone at rest, accent-tinted while a
 /// file hovers over it, and a click/Space target that opens the picker.
 final class DropCardView: NSView {
-    var onFile: ((URL) -> Void)?
+    var onFiles: (([URL]) -> Void)?
     var onBrowse: (() -> Void)?
     var acceptsDrops = true { didSet { if !acceptsDrops { isDropActive = false } } }
     private var isDropActive = false { didSet { needsDisplay = true } }
@@ -37,17 +37,17 @@ final class DropCardView: NSView {
         path.stroke()
     }
 
-    private func draggedFile(_ sender: NSDraggingInfo) -> URL? {
+    private func draggedFiles(_ sender: NSDraggingInfo) -> [URL]? {
         guard
             let files = sender.draggingPasteboard.readObjects(
                 forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
-            files.count == 1
+            !files.isEmpty
         else { return nil }
-        return files[0]
+        return files
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard acceptsDrops, draggedFile(sender) != nil else { return [] }
+        guard acceptsDrops, draggedFiles(sender) != nil else { return [] }
         isDropActive = true
         return .copy
     }
@@ -59,8 +59,8 @@ final class DropCardView: NSView {
     }
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         isDropActive = false
-        guard acceptsDrops, let url = draggedFile(sender) else { return false }
-        onFile?(url)
+        guard acceptsDrops, let urls = draggedFiles(sender) else { return false }
+        onFiles?(urls)
         return true
     }
 

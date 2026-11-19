@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Select or drag multiple certificates at once and bundle them into a single Magisk ZIP.
+- Preview each certificate's subject, expiry and subject hash before building; reject a
+  batch cleanly if any certificate fails validation, without touching the destination.
+- Remember recently used certificates and offer them from a menu next to the file picker.
+- Removed the GitHub Actions CI workflow; run `scripts/test.sh` and `build.sh` locally instead.
+
 ## 1.0.1
 
 - Split application lifetime, window/UI components and module packaging into focused Swift files.

@@ -3,10 +3,26 @@ import UniformTypeIdentifiers
 
 final class MainWindowController: NSObject {
     private var window: NSWindow!
-    private var selected: URL?
+    private var entries: [CertificateEntry] = []
     private(set) var isBuilding = false
 
-    private enum StatusKind { case idle, ready, success, error }
+    private enum StatusKind { case idle, ready, error }
+
+    /// One selected certificate and the state of its background preview.
+    private struct CertificateEntry {
+        let url: URL
+        var state: State
+        let row: CertificateRowView
+
+        enum State {
+            case validating
+            case valid(ModuleBuilder.CertificatePreview)
+            case invalid(String)
+        }
+    }
+
+    private static let recentDefaultsKey = "RecentCertificatePaths"
+    private static let recentLimit = 6
 
     // Header
     private let badge = BadgeView()
@@ -22,19 +38,18 @@ final class MainWindowController: NSObject {
     private let cardIcon = ArtworkView(
         resource: "Burp2Magisk", template: false,
         fallbackSymbol: "doc.zipper", fallbackTint: Theme.accent)
-    private let cardTitle = NSTextField(wrappingLabelWithString: "ลากไฟล์ใบรับรอง Burp มาวางที่นี่")
-    private let cardSubtitle = NSTextField(wrappingLabelWithString: "รองรับไฟล์ .der และ .pem")
+    private let cardTitle = NSTextField(
+        wrappingLabelWithString: "ลากไฟล์ใบรับรอง Burp มาวางที่นี่")
+    private let cardSubtitle = NSTextField(
+        wrappingLabelWithString: "รองรับไฟล์ .der และ .pem เลือกได้หลายไฟล์พร้อมกัน")
     private let placeholderStack = NSStackView()
 
-    // Card: selected file summary
-    private let fileIcon = NSImageView()
-    private let fileName = NSTextField(labelWithString: "")
-    private let fileDetail = NSTextField(labelWithString: "")
-    private let textStack = NSStackView()
+    // Card: selected certificates list
+    private let rowsScrollView = NSScrollView()
+    private let rowsStack = NSStackView()
     private let clearButton = NSButton(
         image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: nil)!,
         target: nil, action: nil)
-    private let summaryStack = NSStackView()
 
     // Status
     private let statusIcon = SymbolImageView(
@@ -52,6 +67,9 @@ final class MainWindowController: NSObject {
     // Footer actions
     private let footerLabel = NSTextField(
         wrappingLabelWithString: "สร้าง ZIP สำหรับติดตั้งผ่าน Magisk บน Android")
+    private let recentButton = NSButton(
+        image: NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: nil)!,
+        target: nil, action: nil)
     private let browseButton = NSButton(title: "เลือกไฟล์…", target: nil, action: nil)
     private let buildButton = AccentButton(title: "สร้าง Magisk ZIP…")
 
@@ -72,6 +90,7 @@ final class MainWindowController: NSObject {
         window.initialFirstResponder = card
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        refreshRecentButton()
     }
 
     // MARK: View configuration
@@ -88,22 +107,23 @@ final class MainWindowController: NSObject {
         cardSubtitle.textColor = .secondaryLabelColor
         cardSubtitle.alignment = .center
 
-        fileName.font = .systemFont(ofSize: 13, weight: .medium)
-        fileName.lineBreakMode = .byTruncatingMiddle
-        fileName.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        fileName.setAccessibilityLabel("ไฟล์ที่เลือก")
-        fileDetail.font = .systemFont(ofSize: 11)
-        fileDetail.textColor = .secondaryLabelColor
+        rowsScrollView.drawsBackground = false
+        rowsScrollView.hasVerticalScroller = true
+        rowsScrollView.autohidesScrollers = true
+        rowsScrollView.isHidden = true
 
-        fileIcon.imageScaling = .scaleProportionallyDown
+        rowsStack.orientation = .vertical
+        rowsStack.alignment = .leading
+        rowsStack.spacing = 2
 
         clearButton.isBordered = false
         clearButton.imagePosition = .imageOnly
         clearButton.imageScaling = .scaleProportionallyDown
-        clearButton.setAccessibilityLabel("ล้างไฟล์ที่เลือก")
-        clearButton.toolTip = "ล้างไฟล์ที่เลือก"
+        clearButton.setAccessibilityLabel("ล้างไฟล์ที่เลือกทั้งหมด")
+        clearButton.toolTip = "ล้างไฟล์ที่เลือกทั้งหมด"
         clearButton.target = self
-        clearButton.action = #selector(clear)
+        clearButton.action = #selector(clearAll)
+        clearButton.isHidden = true
 
         statusLabel.font = .systemFont(ofSize: 13)
         statusLabel.textColor = .secondaryLabelColor
@@ -112,12 +132,21 @@ final class MainWindowController: NSObject {
         footerLabel.font = .systemFont(ofSize: 11)
         footerLabel.textColor = .tertiaryLabelColor
 
+        recentButton.isBordered = false
+        recentButton.imagePosition = .imageOnly
+        recentButton.imageScaling = .scaleProportionallyDown
+        recentButton.setAccessibilityLabel("ไฟล์ล่าสุด")
+        recentButton.toolTip = "ไฟล์ล่าสุด"
+        recentButton.target = self
+        recentButton.action = #selector(showRecentMenu)
+        recentButton.isHidden = true
+
         browseButton.bezelStyle = .rounded
         browseButton.controlSize = .large
         browseButton.font = .systemFont(ofSize: 13)
         browseButton.target = self
         browseButton.action = #selector(pick)
-        browseButton.toolTip = "เปิดหน้าต่างเลือกไฟล์ใบรับรอง"
+        browseButton.toolTip = "เปิดหน้าต่างเลือกไฟล์ใบรับรอง (เลือกได้หลายไฟล์)"
 
         buildButton.target = self
         buildButton.action = #selector(makeZip)
@@ -125,7 +154,7 @@ final class MainWindowController: NSObject {
         buildButton.isEnabled = false
         buildButton.toolTip = "สร้าง ZIP สำหรับติดตั้งผ่าน Magisk จากไฟล์ที่เลือก"
 
-        card.onFile = { [weak self] url in self?.select(url) }
+        card.onFiles = { [weak self] urls in self?.addCertificates(urls) }
         card.onBrowse = { [weak self] in self?.pick() }
         card.toolTip = "ลากไฟล์ใบรับรองมาวาง หรือคลิกเพื่อเลือกไฟล์"
         card.setAccessibilityLabel("พื้นที่รับไฟล์ใบรับรอง")
@@ -135,10 +164,7 @@ final class MainWindowController: NSObject {
         headerIcon.setAccessibilityElement(false)
         cardIcon.setAccessibilityElement(false)
         statusIcon.setAccessibilityElement(false)
-        fileIcon.setAccessibilityElement(false)
         spinner.setAccessibilityLabel("กำลังตรวจ certificate และสร้าง ZIP")
-
-        summaryStack.isHidden = true
     }
 
     // MARK: Layout
@@ -150,11 +176,13 @@ final class MainWindowController: NSObject {
         headerSubtitle.translatesAutoresizingMaskIntoConstraints = false
         card.translatesAutoresizingMaskIntoConstraints = false
         placeholderStack.translatesAutoresizingMaskIntoConstraints = false
-        summaryStack.translatesAutoresizingMaskIntoConstraints = false
+        rowsScrollView.translatesAutoresizingMaskIntoConstraints = false
+        clearButton.translatesAutoresizingMaskIntoConstraints = false
         statusIcon.translatesAutoresizingMaskIntoConstraints = false
         spinner.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         footerLabel.translatesAutoresizingMaskIntoConstraints = false
+        recentButton.translatesAutoresizingMaskIntoConstraints = false
         browseButton.translatesAutoresizingMaskIntoConstraints = false
         buildButton.translatesAutoresizingMaskIntoConstraints = false
 
@@ -167,6 +195,7 @@ final class MainWindowController: NSObject {
         content.addSubview(spinner)
         content.addSubview(statusLabel)
         content.addSubview(footerLabel)
+        content.addSubview(recentButton)
         content.addSubview(browseButton)
         content.addSubview(buildButton)
 
@@ -180,21 +209,10 @@ final class MainWindowController: NSObject {
         placeholderStack.setCustomSpacing(10, after: cardIcon)
         card.addSubview(placeholderStack)
 
-        textStack.orientation = .vertical
-        textStack.alignment = .leading
-        textStack.spacing = 2
-        for view in [fileName, fileDetail] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            textStack.addArrangedSubview(view)
-        }
-        summaryStack.orientation = .horizontal
-        summaryStack.alignment = .centerY
-        summaryStack.spacing = 10
-        for view in [fileIcon, textStack, clearButton] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            summaryStack.addArrangedSubview(view)
-        }
-        card.addSubview(summaryStack)
+        rowsStack.translatesAutoresizingMaskIntoConstraints = false
+        rowsScrollView.documentView = rowsStack
+        card.addSubview(rowsScrollView)
+        card.addSubview(clearButton)
 
         NSLayoutConstraint.activate([
             badge.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
@@ -230,15 +248,17 @@ final class MainWindowController: NSObject {
             cardIcon.heightAnchor.constraint(equalToConstant: 44),
             cardTitle.widthAnchor.constraint(lessThanOrEqualToConstant: 470),
 
-            summaryStack.centerXAnchor.constraint(equalTo: card.centerXAnchor),
-            summaryStack.centerYAnchor.constraint(equalTo: card.centerYAnchor),
-            summaryStack.leadingAnchor.constraint(
-                greaterThanOrEqualTo: card.leadingAnchor, constant: 20),
-            summaryStack.trailingAnchor.constraint(
-                lessThanOrEqualTo: card.trailingAnchor, constant: -20),
-            fileIcon.widthAnchor.constraint(equalToConstant: 36),
-            fileIcon.heightAnchor.constraint(equalToConstant: 36),
-            fileName.widthAnchor.constraint(lessThanOrEqualToConstant: 340),
+            rowsScrollView.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+            rowsScrollView.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
+            rowsScrollView.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 18),
+            rowsScrollView.trailingAnchor.constraint(
+                equalTo: clearButton.leadingAnchor, constant: -8),
+            rowsStack.topAnchor.constraint(equalTo: rowsScrollView.contentView.topAnchor),
+            rowsStack.leadingAnchor.constraint(equalTo: rowsScrollView.contentView.leadingAnchor),
+            rowsStack.widthAnchor.constraint(equalTo: rowsScrollView.contentView.widthAnchor),
+
+            clearButton.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
+            clearButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
             clearButton.widthAnchor.constraint(equalToConstant: 18),
             clearButton.heightAnchor.constraint(equalToConstant: 18),
 
@@ -258,6 +278,12 @@ final class MainWindowController: NSObject {
             footerLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
             footerLabel.centerYAnchor.constraint(equalTo: buildButton.centerYAnchor),
 
+            recentButton.centerYAnchor.constraint(equalTo: buildButton.centerYAnchor),
+            recentButton.trailingAnchor.constraint(
+                equalTo: browseButton.leadingAnchor, constant: -8),
+            recentButton.widthAnchor.constraint(equalToConstant: 20),
+            recentButton.heightAnchor.constraint(equalToConstant: 20),
+
             browseButton.centerYAnchor.constraint(equalTo: buildButton.centerYAnchor),
             browseButton.trailingAnchor.constraint(
                 equalTo: buildButton.leadingAnchor, constant: -12),
@@ -276,11 +302,14 @@ final class MainWindowController: NSObject {
             statusIcon.configure(symbol: "info.circle.fill", tint: .secondaryLabelColor)
         case .ready:
             statusIcon.configure(symbol: "checkmark.shield.fill", tint: Theme.accent)
-        case .success:
-            statusIcon.configure(symbol: "checkmark.circle.fill", tint: .systemGreen)
         case .error:
             statusIcon.configure(symbol: "exclamationmark.triangle.fill", tint: .systemRed)
         }
+    }
+
+    private func setSuccessStatus(_ text: String) {
+        statusLabel.stringValue = text
+        statusIcon.configure(symbol: "checkmark.circle.fill", tint: .systemGreen)
     }
 
     private func setBusy(_ isBusy: Bool) {
@@ -288,56 +317,167 @@ final class MainWindowController: NSObject {
         card.acceptsDrops = !isBusy
         card.alphaValue = isBusy ? 0.6 : 1
         browseButton.isEnabled = !isBusy
-        buildButton.isEnabled = !isBusy && selected != nil
+        recentButton.isEnabled = !isBusy
+        buildButton.isEnabled = !isBusy && canBuild
         spinner.isHidden = !isBusy
         statusIcon.isHidden = isBusy
         if isBusy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
     }
 
-    func select(_ url: URL) {
+    /// Building is allowed once every selected certificate has finished
+    /// validating and none of them failed.
+    private var canBuild: Bool {
+        !entries.isEmpty
+            && entries.allSatisfy {
+                if case .valid = $0.state { return true }
+                return false
+            }
+    }
+
+    private func refreshAggregateStatus() {
         guard !isBuilding else { return }
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-            !isDirectory.boolValue
-        else { return }
-        selected = url
-        fileName.stringValue = url.lastPathComponent
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-        let formattedSize = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
-        let ext = url.pathExtension.uppercased()
-        fileDetail.stringValue = ext.isEmpty ? formattedSize : "\(formattedSize) · \(ext)"
-        fileIcon.image = NSWorkspace.shared.icon(forFile: url.path)
-        placeholderStack.isHidden = true
-        summaryStack.isHidden = false
-        setStatus("พร้อมตรวจ CA:TRUE และสร้าง ZIP", kind: .ready)
+        guard !entries.isEmpty else {
+            setStatus("เลือกไฟล์ใบรับรองเพื่อเริ่ม", kind: .idle)
+            buildButton.isEnabled = false
+            return
+        }
+        if entries.contains(where: {
+            if case .validating = $0.state { return true }
+            return false
+        }
+        ) {
+            setStatus("กำลังตรวจสอบ certificate…", kind: .idle)
+            buildButton.isEnabled = false
+            return
+        }
+        let invalidCount = entries.filter {
+            if case .invalid = $0.state { return true }
+            return false
+        }.count
+        if invalidCount > 0 {
+            let suffix = entries.count == 1 ? "" : " (\(invalidCount)/\(entries.count) ไฟล์)"
+            setStatus("มีไฟล์ที่ตรวจไม่ผ่าน\(suffix) กรุณานำออกก่อนสร้าง ZIP", kind: .error)
+            buildButton.isEnabled = false
+            return
+        }
+        let text =
+            entries.count == 1
+            ? "พร้อมตรวจ CA:TRUE และสร้าง ZIP"
+            : "พร้อมสร้าง ZIP รวม \(entries.count) certificate"
+        setStatus(text, kind: .ready)
         buildButton.isEnabled = true
     }
 
-    @objc func clear() {
+    // MARK: Selection
+
+    func addCertificates(_ urls: [URL]) {
         guard !isBuilding else { return }
-        selected = nil
-        fileName.stringValue = ""
-        fileDetail.stringValue = ""
-        fileIcon.image = nil
+        let existingPaths = Set(entries.map(\.url.path))
+        var added = false
+        for url in urls {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                !isDirectory.boolValue, !existingPaths.contains(url.path)
+            else { continue }
+            appendEntry(for: url)
+            added = true
+        }
+        guard added else { return }
+        placeholderStack.isHidden = true
+        rowsScrollView.isHidden = false
+        clearButton.isHidden = false
+        refreshAggregateStatus()
+    }
+
+    private func appendEntry(for url: URL) {
+        let row = CertificateRowView()
+        row.configure(
+            icon: NSWorkspace.shared.icon(forFile: url.path),
+            name: url.lastPathComponent,
+            detail: "กำลังตรวจสอบ…",
+            detailColor: .secondaryLabelColor)
+        row.onRemove = { [weak self] in self?.removeCertificate(at: url) }
+        row.translatesAutoresizingMaskIntoConstraints = false
+        rowsStack.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
+        entries.append(CertificateEntry(url: url, state: .validating, row: row))
+        inspect(url)
+    }
+
+    private func inspect(_ url: URL) {
+        let builder = ModuleBuilder(resourcesURL: Bundle.main.resourceURL)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let outcome: CertificateEntry.State
+            do {
+                outcome = .valid(try builder.inspect(certificate: url))
+            } catch {
+                outcome = .invalid(error.localizedDescription)
+            }
+            DispatchQueue.main.async {
+                self?.applyInspection(outcome, to: url)
+            }
+        }
+    }
+
+    private func applyInspection(_ state: CertificateEntry.State, to url: URL) {
+        guard let index = entries.firstIndex(where: { $0.url == url }) else { return }
+        entries[index].state = state
+        let row = entries[index].row
+        switch state {
+        case .validating:
+            row.configure(
+                icon: NSWorkspace.shared.icon(forFile: url.path), name: url.lastPathComponent,
+                detail: "กำลังตรวจสอบ…", detailColor: .secondaryLabelColor)
+        case .valid(let preview):
+            let expiry = preview.expired ? "หมดอายุแล้ว" : "หมดอายุ \(preview.notAfter)"
+            row.configure(
+                icon: NSWorkspace.shared.icon(forFile: url.path), name: url.lastPathComponent,
+                detail: "\(preview.subject) · \(expiry)",
+                detailColor: preview.expired ? .systemOrange : .secondaryLabelColor)
+        case .invalid(let message):
+            row.configure(
+                icon: NSWorkspace.shared.icon(forFile: url.path), name: url.lastPathComponent,
+                detail: message, detailColor: .systemRed)
+        }
+        refreshAggregateStatus()
+    }
+
+    private func removeCertificate(at url: URL) {
+        guard !isBuilding, let index = entries.firstIndex(where: { $0.url == url }) else { return }
+        entries[index].row.removeFromSuperview()
+        entries.remove(at: index)
+        if entries.isEmpty {
+            placeholderStack.isHidden = false
+            rowsScrollView.isHidden = true
+            clearButton.isHidden = true
+        }
+        refreshAggregateStatus()
+    }
+
+    @objc func clearAll() {
+        guard !isBuilding else { return }
+        for entry in entries { entry.row.removeFromSuperview() }
+        entries.removeAll()
         placeholderStack.isHidden = false
-        summaryStack.isHidden = true
-        setStatus("เลือกไฟล์ใบรับรองเพื่อเริ่ม", kind: .idle)
-        buildButton.isEnabled = false
+        rowsScrollView.isHidden = true
+        clearButton.isHidden = true
+        refreshAggregateStatus()
     }
 
     @objc func pick() {
         guard !isBuilding else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.title = "เลือกไฟล์ใบรับรอง"
         panel.prompt = "เลือก"
-        panel.message = "เลือก Burp CA certificate แบบ DER หรือ PEM"
-        if panel.runModal() == .OK, let url = panel.url { select(url) }
+        panel.message = "เลือก Burp CA certificate แบบ DER หรือ PEM (เลือกได้หลายไฟล์)"
+        if panel.runModal() == .OK { addCertificates(panel.urls) }
     }
 
     @objc func makeZip() {
-        guard let input = selected, !isBuilding else { return }
+        guard canBuild, !isBuilding else { return }
+        let certificates = entries.map(\.url)
         let panel = NSSavePanel()
         panel.title = "บันทึก Magisk ZIP"
         panel.prompt = "บันทึก"
@@ -350,7 +490,7 @@ final class MainWindowController: NSObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let errorMessage: String?
             do {
-                try builder.build(certificate: input, destination: destination)
+                try builder.build(certificates: certificates, destination: destination)
                 errorMessage = nil
             } catch {
                 errorMessage = error.localizedDescription
@@ -366,12 +506,56 @@ final class MainWindowController: NSObject {
                     alert.alertStyle = .warning
                     alert.runModal()
                 } else {
-                    self.setStatus(
-                        "สร้างสำเร็จ: \(destination.lastPathComponent)\nนำไปติดตั้งใน Magisk แล้ว reboot ด้วยตัวเอง",
-                        kind: .success)
+                    self.setSuccessStatus(
+                        "สร้างสำเร็จ: \(destination.lastPathComponent)\nนำไปติดตั้งใน Magisk แล้ว reboot ด้วยตัวเอง"
+                    )
+                    self.rememberRecent(certificates)
                     NSWorkspace.shared.activateFileViewerSelecting([destination])
                 }
             }
         }
+    }
+
+    // MARK: Recent files
+
+    private func rememberRecent(_ urls: [URL]) {
+        var recent = UserDefaults.standard.stringArray(forKey: Self.recentDefaultsKey) ?? []
+        for url in urls {
+            recent.removeAll { $0 == url.path }
+            recent.insert(url.path, at: 0)
+        }
+        if recent.count > Self.recentLimit { recent.removeLast(recent.count - Self.recentLimit) }
+        UserDefaults.standard.set(recent, forKey: Self.recentDefaultsKey)
+        refreshRecentButton()
+    }
+
+    private func refreshRecentButton() {
+        let paths = UserDefaults.standard.stringArray(forKey: Self.recentDefaultsKey) ?? []
+        recentButton.isHidden = paths.isEmpty
+    }
+
+    @objc private func showRecentMenu() {
+        let paths = UserDefaults.standard.stringArray(forKey: Self.recentDefaultsKey) ?? []
+        guard !paths.isEmpty else { return }
+        let menu = NSMenu()
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            let item = NSMenuItem(
+                title: url.lastPathComponent, action: #selector(selectRecent(_:)), keyEquivalent: ""
+            )
+            item.target = self
+            item.toolTip = path
+            item.representedObject = url
+            item.isEnabled = FileManager.default.fileExists(atPath: path)
+            menu.addItem(item)
+        }
+        menu.popUp(
+            positioning: nil, at: NSPoint(x: 0, y: recentButton.bounds.height),
+            in: recentButton)
+    }
+
+    @objc private func selectRecent(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        addCertificates([url])
     }
 }
