@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Split application lifetime, window/UI components and module packaging into focused Swift files.
+- Extract a testable packaging service with disk-backed logs and bounded error details.
+- Add integration checks, shared Swift formatting and contributor documentation.
+- Update Universal and Xcode builds to compile the new source structure.
+
 ## 1.0.0
 
 - Native macOS Swift/AppKit interface in Thai, with certificate drag and drop.

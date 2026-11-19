@@ -14,15 +14,15 @@ import Foundation
 // MARK: - Palette
 
 struct Palette {
-    var sheet: NSColor      // certificate paper
-    var fold: NSColor       // folded corner underside
-    var line: NSColor       // content bars on the certificate
-    var seal: NSColor       // trust seal disc
-    var sealCheck: NSColor? // checkmark stroke; nil knocks the shape out
-    var boxFront: NSColor   // package front face
-    var boxTop: NSColor     // package top face
-    var boxSide: NSColor    // package side face
-    var strap: NSColor      // package strap band
+    var sheet: NSColor  // certificate paper
+    var fold: NSColor  // folded corner underside
+    var line: NSColor  // content bars on the certificate
+    var seal: NSColor  // trust seal disc
+    var sealCheck: NSColor?  // checkmark stroke; nil knocks the shape out
+    var boxFront: NSColor  // package front face
+    var boxTop: NSColor  // package top face
+    var boxSide: NSColor  // package side face
+    var strap: NSColor  // package strap band
 }
 
 let colorPalette = Palette(
@@ -53,14 +53,16 @@ func drawMotif(_ palette: Palette, shadow: Bool) {
     let ctx = NSGraphicsContext.current!.cgContext
 
     func fill(_ path: NSBezierPath, _ color: NSColor) {
-        color.setFill(); path.fill()
+        color.setFill()
+        path.fill()
     }
 
     // Soft contact shadow behind the motif.
     if shadow {
         ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: -14), blur: 26,
-                      color: NSColor.black.withAlphaComponent(0.20).cgColor)
+        ctx.setShadow(
+            offset: CGSize(width: 0, height: -14), blur: 26,
+            color: NSColor.black.withAlphaComponent(0.20).cgColor)
         let path = NSBezierPath(roundedRect: sheet, xRadius: sheetRadius, yRadius: sheetRadius)
         NSColor.white.setFill()
         path.fill()
@@ -72,7 +74,8 @@ func drawMotif(_ palette: Palette, shadow: Bool) {
     fill(paper, palette.sheet)
 
     // Folded top-right corner: underside triangle + crease.
-    let r = sheet.maxX, t = sheet.maxY
+    let r = sheet.maxX
+    let t = sheet.maxY
     let fold = NSBezierPath()
     fold.move(to: NSPoint(x: r - foldSize, y: t))
     fold.line(to: NSPoint(x: r, y: t))
@@ -89,17 +92,21 @@ func drawMotif(_ palette: Palette, shadow: Bool) {
     // Content bars suggesting certificate fields.
     let bars: [(y: CGFloat, width: CGFloat)] = [(700, 340), (648, 400), (596, 280)]
     for bar in bars {
-        let path = NSBezierPath(roundedRect: NSRect(x: sheet.minX + 70, y: bar.y,
-                                                    width: bar.width, height: 26),
-                                xRadius: 13, yRadius: 13)
+        let path = NSBezierPath(
+            roundedRect: NSRect(
+                x: sheet.minX + 70, y: bar.y,
+                width: bar.width, height: 26),
+            xRadius: 13, yRadius: 13)
         fill(path, palette.line)
     }
 
     // Trust seal: Burp-orange disc with a checkmark.
     let sealCenter = NSPoint(x: sheet.minX + 130, y: sheet.minY + 150)
     let sealRadius: CGFloat = 74
-    let seal = NSBezierPath(ovalIn: NSRect(x: sealCenter.x - sealRadius, y: sealCenter.y - sealRadius,
-                                           width: sealRadius * 2, height: sealRadius * 2))
+    let seal = NSBezierPath(
+        ovalIn: NSRect(
+            x: sealCenter.x - sealRadius, y: sealCenter.y - sealRadius,
+            width: sealRadius * 2, height: sealRadius * 2))
     fill(seal, palette.seal)
     let check = NSBezierPath()
     check.move(to: NSPoint(x: sealCenter.x - 32, y: sealCenter.y + 2))
@@ -150,9 +157,11 @@ func drawMotif(_ palette: Palette, shadow: Bool) {
     strapTop.line(to: NSPoint(x: strapX + skew, y: front.maxY + skew))
     strapTop.close()
     fill(strapTop, palette.strap)
-    let strapFront = NSBezierPath(roundedRect: NSRect(x: strapX, y: front.minY - 2,
-                                                      width: strapW, height: front.height + 2),
-                                  xRadius: 12, yRadius: 12)
+    let strapFront = NSBezierPath(
+        roundedRect: NSRect(
+            x: strapX, y: front.minY - 2,
+            width: strapW, height: front.height + 2),
+        xRadius: 12, yRadius: 12)
     fill(strapFront, palette.strap)
 }
 
@@ -160,15 +169,20 @@ func drawMotif(_ palette: Palette, shadow: Bool) {
 
 func drawIconBackground() {
     let ctx = NSGraphicsContext.current!.cgContext
-    let squircle = NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: 1024, height: 1024),
-                                xRadius: 229, yRadius: 229)
+    let squircle = NSBezierPath(
+        roundedRect: NSRect(x: 0, y: 0, width: 1024, height: 1024),
+        xRadius: 229, yRadius: 229)
     squircle.addClip()
-    let colors = [NSColor(srgbRed: 0.06, green: 0.39, blue: 0.29, alpha: 1).cgColor,
-                  NSColor(srgbRed: 0.02, green: 0.14, blue: 0.10, alpha: 1).cgColor]
-    let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
-                              colors: colors as CFArray, locations: [0, 1])!
-    ctx.drawLinearGradient(gradient, start: CGPoint(x: 512, y: 1024), end: CGPoint(x: 512, y: 0),
-                           options: [])
+    let colors = [
+        NSColor(srgbRed: 0.06, green: 0.39, blue: 0.29, alpha: 1).cgColor,
+        NSColor(srgbRed: 0.02, green: 0.14, blue: 0.10, alpha: 1).cgColor,
+    ]
+    let gradient = CGGradient(
+        colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+        colors: colors as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(
+        gradient, start: CGPoint(x: 512, y: 1024), end: CGPoint(x: 512, y: 0),
+        options: [])
     // Gentle top sheen.
     NSColor.white.withAlphaComponent(0.10).setFill()
     let sheen = NSBezierPath(ovalIn: NSRect(x: 112, y: 640, width: 800, height: 560))
@@ -187,13 +201,15 @@ func render(size: NSSize, _ draw: @escaping () -> Void) -> NSImage {
 
 func pngData(_ image: NSImage) -> Data? {
     guard let tiff = image.tiffRepresentation,
-          let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        let rep = NSBitmapImageRep(data: tiff)
+    else { return nil }
     return rep.representation(using: .png, properties: [:])
 }
 
 func resized(_ image: NSImage, to size: NSSize) -> NSImage {
     render(size: size) {
-        image.draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1)
+        image.draw(
+            in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1)
     }
 }
 

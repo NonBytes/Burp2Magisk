@@ -31,18 +31,25 @@ Release มีไฟล์ `SHA256SUMS.txt` สำหรับตรวจว่
 
 เปิด `Burp2Magisk.xcodeproj` ด้วย Xcode เลือก scheme **Burp2Magisk** และปลายทาง **My Mac** แล้วกด **⌘R** โปรเจกต์ไม่มี external dependencies
 
-ต้องมี Xcode Command Line Tools แล้วรัน `bash build.sh` ผลลัพธ์อยู่ใน `dist/` ซอร์สหน้าต่างอยู่ใน `Sources/main.swift` และสคริปต์แพ็กใน `Resources/`
+ต้องมี Xcode Command Line Tools แล้วรัน `bash build.sh` ผลลัพธ์อยู่ใน `dist/` อ่าน [CONTRIBUTING.md](CONTRIBUTING.md) สำหรับโครงสร้างโค้ด วิธีทดสอบ จัดรูปแบบ และสร้างไอคอน
 
 ## โครงสร้างโปรเจกต์
 
 ```text
 Burp2Magisk.xcodeproj/   โปรเจกต์ Xcode
-Sources/main.swift        Swift AppKit GUI
+Sources/main.swift        จุดเริ่มต้น AppKit
+Sources/App/              วงจรชีวิตแอป
+Sources/UI/               หน้าต่าง ธีม และ UI components
+Sources/Services/         สร้าง module และบันทึก ZIP แยกจาก GUI
 Resources/Info.plist      ข้อมูลแอป
 Resources/*.sh            ตรวจ certificate และสร้าง module
 Resources/ModuleTemplate/ installer และ boot script ที่อ่านแก้ไขได้
 build.sh                  build แอป Universal และ ZIP
+Tests/                    integration tests ของตัวสร้าง ZIP
+scripts/test.sh           รันชุดทดสอบโดยไม่เปิด GUI
 ```
+
+ก่อนส่งการเปลี่ยนแปลง รัน `bash scripts/test.sh` และ `bash build.sh` จัดรูปแบบ Swift ตาม `.swift-format` ด้วย `xcrun swift-format format --in-place --recursive Sources scripts Tests`
 
 ## Git
 
