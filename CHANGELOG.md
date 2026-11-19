@@ -2,11 +2,17 @@
 
 ## Unreleased
 
+## 1.0.1
+
 - Split application lifetime, window/UI components and module packaging into focused Swift files.
 - Extract a testable packaging service with disk-backed logs and bounded error details.
 - Add integration checks, shared Swift formatting and contributor documentation.
 - Update Xcode build to compile the new source structure; add a GitHub Actions CI workflow.
 - Drop Intel (x86_64) support; `build.sh` now produces an arm64-only (Apple Silicon) app.
+
+The app does not install certificates on macOS or deploy modules to Android automatically.
+The release is ad hoc signed and is not Apple notarized. Android compatibility depends on
+the device, ROM and Magisk configuration. Certificate pinning is not bypassed.
 
 ## 1.0.0
 

@@ -4,9 +4,9 @@
 
 ![Burp2Magisk macOS](docs/images/macos-app.png)
 
-## ดาวน์โหลด v1.0.0
+## ดาวน์โหลด v1.0.1
 
-ดาวน์โหลด [Burp2Magisk-macOS.zip](https://github.com/NonBytes/Burp2Magisk/releases/download/v1.0.0/Burp2Magisk-macOS.zip) จาก [GitHub Releases](https://github.com/NonBytes/Burp2Magisk/releases/latest) เป็นแอป Universal สำหรับ **macOS 12 ขึ้นไป ทั้ง Intel และ Apple Silicon** ไม่ต้องติดตั้ง Python หรือ Homebrew
+ดาวน์โหลด [Burp2Magisk-macOS.zip](https://github.com/NonBytes/Burp2Magisk/releases/download/v1.0.1/Burp2Magisk-macOS.zip) จาก [GitHub Releases](https://github.com/NonBytes/Burp2Magisk/releases/latest) สำหรับ **macOS 12 ขึ้นไป บน Apple Silicon (arm64)** ไม่ต้องติดตั้ง Python หรือ Homebrew
 
 ## ใช้งาน
 
@@ -15,7 +15,7 @@
 3. กด **สร้าง Magisk ZIP…** แล้วเลือกที่บันทึก
 4. นำ ZIP ผลลัพธ์ไปติดตั้งผ่าน Magisk บน Android แล้ว reboot ด้วยตัวเอง
 
-รองรับ macOS 12 ขึ้นไป ทั้ง Apple Silicon และ Intel รวมไฟล์ที่ต้องใช้ไว้ในแอป ไม่ต้องติดตั้ง Python หรือ Homebrew ใช้ OpenSSL, zip และ unzip ที่มากับ macOS แอปเซ็นแบบ ad hoc สำหรับใช้งานในเครื่อง ยังไม่ได้ notarize สำหรับแจกจ่าย จึงอาจมีการแจ้งเตือนจาก macOS เมื่อส่งต่อ
+รองรับ macOS 12 ขึ้นไป บน Apple Silicon (arm64) รวมไฟล์ที่ต้องใช้ไว้ในแอป ไม่ต้องติดตั้ง Python หรือ Homebrew ใช้ OpenSSL, zip และ unzip ที่มากับ macOS แอปเซ็นแบบ ad hoc สำหรับใช้งานในเครื่อง ยังไม่ได้ notarize สำหรับแจกจ่าย จึงอาจมีการแจ้งเตือนจาก macOS เมื่อส่งต่อ
 
 ตรวจ Basic Constraints ว่าเป็น CA:TRUE ไม่เขียน certificate ลง trust store ของ Mac และไม่เชื่อมต่อหรือติดตั้ง module บน Android อัตโนมัติ ไม่ข้าม certificate pinning การรองรับ ROM/Android ต้องทดสอบกับเครื่องเป้าหมาย สคริปต์ต้นแบบมีการจัดการ Conscrypt APEX ด้วย bind mounts
 
